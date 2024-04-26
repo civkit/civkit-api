@@ -1,16 +1,22 @@
-Setting Up PostgreSQL Database and Tables
+# Setting Up PostgreSQL Database and Tables
+This guide walks you through setting up a PostgreSQL database and tables to store information about orders and invoices.
 
+Prerequisites:
 
-Create PostgreSQL Database:
-Make sure PostgreSQL is installed on your system.
-Open a terminal window and run the following command to create a new PostgreSQL database:
+PostgreSQL installed on your system
+Steps:
+
+Create a PostgreSQL Database:
+
+Open a terminal window and run the following command to create a new database named holdinvoices:
 
 createdb holdinvoices
 
-Create Orders Table:
-The orders table stores information about orders placed by customers.
-The table structure includes columns such as order_id, customer_id, order_details, amount_msat, currency, payment_method, status, and created_at.
+Create the Orders Table:
 
+The orders table stores details about customer orders. It includes columns for order ID, customer ID, order details, amount (in milli-satoshis), currency, payment method, status, and creation timestamp.
+
+'''
 CREATE TABLE orders (
     order_id SERIAL PRIMARY KEY,
     customer_id INT NOT NULL,
@@ -21,11 +27,13 @@ CREATE TABLE orders (
     status VARCHAR(20),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+'''
 
-Create Invoices Table:
-The invoices table stores information about invoices generated for orders.
-This table includes columns such as invoice_id, order_id, bolt11, amount_msat, description, status, created_at, and expires_at.
+Create the Invoices Table:
 
+The invoices table stores information about invoices generated for orders. This table includes columns for invoice ID, order ID, BOLT 11 invoice string, amount (in milli-satoshis), description, status, creation timestamp, and expiration timestamp.
+
+'''
 CREATE TABLE invoices (
     invoice_id SERIAL PRIMARY KEY,
     order_id INT NOT NULL,
@@ -36,12 +44,12 @@ CREATE TABLE invoices (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ
 );
-
+'''
 Running Test Curl Commands
+Once you've set up the database and tables, you can use curl commands to interact with your API for testing purposes.
 
-After setting up the database and tables, you can run test curl commands to interact with your API.
 Here's an example curl command to create a new order via the API:
-
+'''
 curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" -d '{
   "customer_id": 123,
   "order_details": "New Order for Testing",
@@ -50,6 +58,7 @@ curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json"
   "payment_method": "Credit Card",
   "status": "Pending"
 }'
-This command sends a POST request to the specified API endpoint (http://localhost:3000/api/order) with JSON data representing a new order.
+'''
 
-Modify the JSON data as needed to test different scenarios.
+
+This command sends a POST request to the specified API endpoint (http://localhost:3000/api/order) with JSON data representing a new order. Modify the JSON data as needed to test different scenarios.
