@@ -1,16 +1,19 @@
 # Setting Up PostgreSQL Database and Tables
-This guide walks you through setting up a PostgreSQL database and tables to store information about orders and invoices.
+## This guide walks you through setting up a PostgreSQL database and tables to store information about orders and invoices.
 
 Prerequisites:
 
-PostgreSQL installed on your system
+- PostgreSQL installed on your system
+- node.js
+- lightning node
+
 Steps:
-
 Create a PostgreSQL Database:
-
 Open a terminal window and run the following command to create a new database named holdinvoices:
 
+```
 createdb holdinvoices
+```
 
 Create the Orders Table:
 
@@ -51,7 +54,7 @@ Once you've set up the database and tables, you can use curl commands to interac
 Here's an example curl command to create a new order via the API:
 ```
 curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" -d '{
-  "customer_id": 123,
+  "customer_id": 1234567,
   "order_details": "New Order for Testing",
   "amount_msat": 50000,
   "currency": "USD",
@@ -60,5 +63,10 @@ curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json"
 }'
 ```
 
+```
+curl -X POST http://localhost:3000/api/holdinvoicelookup -H "Content-Type: application/json" -d '{
+  "payment_hash": "4f38cb95355deecabe1d13eb594b4420925ee7c32a8565ab8615a07745bdfca6"
+}'
+```
 
 This command sends a POST request to the specified API endpoint (http://localhost:3000/api/order) with JSON data representing a new order. Modify the JSON data as needed to test different scenarios.
