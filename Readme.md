@@ -16,7 +16,7 @@ Create the Orders Table:
 
 The orders table stores details about customer orders. It includes columns for order ID, customer ID, order details, amount (in milli-satoshis), currency, payment method, status, and creation timestamp.
 
-'''
+```
 CREATE TABLE orders (
     order_id SERIAL PRIMARY KEY,
     customer_id INT NOT NULL,
@@ -27,13 +27,13 @@ CREATE TABLE orders (
     status VARCHAR(20),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
-'''
+```
 
 Create the Invoices Table:
 
 The invoices table stores information about invoices generated for orders. This table includes columns for invoice ID, order ID, BOLT 11 invoice string, amount (in milli-satoshis), description, status, creation timestamp, and expiration timestamp.
 
-'''
+```
 CREATE TABLE invoices (
     invoice_id SERIAL PRIMARY KEY,
     order_id INT NOT NULL,
@@ -44,12 +44,12 @@ CREATE TABLE invoices (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ
 );
-'''
+```
 Running Test Curl Commands
 Once you've set up the database and tables, you can use curl commands to interact with your API for testing purposes.
 
 Here's an example curl command to create a new order via the API:
-'''
+```
 curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" -d '{
   "customer_id": 123,
   "order_details": "New Order for Testing",
@@ -58,7 +58,7 @@ curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json"
   "payment_method": "Credit Card",
   "status": "Pending"
 }'
-'''
+```
 
 
 This command sends a POST request to the specified API endpoint (http://localhost:3000/api/order) with JSON data representing a new order. Modify the JSON data as needed to test different scenarios.
