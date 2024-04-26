@@ -1,6 +1,7 @@
 import express from 'express';
 import { postHoldinvoice, holdInvoiceLookup } from './services/invoiceService.js';
 import orderRoutes from './routes/orderRoutes.js'; // Ensure this import is correct
+import payoutsRoutes from './routes/payouts.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +30,9 @@ app.post('/api/holdinvoicelookup', async (req, res) => {
 
 // Route for handling order creation
 app.use('/api/order', orderRoutes); // Make sure you use app.use here to properly mount the route
+
+app.use('/api/payouts', payoutsRoutes);
+
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

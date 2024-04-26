@@ -48,6 +48,18 @@ CREATE TABLE invoices (
     expires_at TIMESTAMPTZ
 );
 ```
+
+```
+CREATE TABLE payouts (
+  payout_id SERIAL PRIMARY KEY,
+  order_id INT NOT NULL REFERENCES orders(order_id),
+  ln_invoice TEXT NOT NULL,
+  status CHARACTER VARYING(20) DEFAULT 'pending',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 Running Test Curl Commands
 Once you've set up the database and tables, you can use curl commands to interact with your API for testing purposes.
 
