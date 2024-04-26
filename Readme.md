@@ -75,9 +75,19 @@ curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json"
 }'
 ```
 
+check payment hash status
 ```
 curl -X POST http://localhost:3000/api/holdinvoicelookup -H "Content-Type: application/json" -d '{
   "payment_hash": "4f38cb95355deecabe1d13eb594b4420925ee7c32a8565ab8615a07745bdfca6"
+}'
+```
+
+submit payout lightning invoice
+
+```
+curl -X POST http://localhost:3000/api/payouts/submit -H "Content-Type: application/json" -d '{
+    "order_id": 14,
+    "ln_invoice": "lnbc500n1pnzk6tqsp5xpd3ygj43dm6wh0tnk8d64mkavcmxay5ly8tnyc3dtmqlgkqedtqp..."
 }'
 ```
 
