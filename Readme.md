@@ -10,9 +10,7 @@ createdb holdinvoices
 Create Orders Table:
 The orders table stores information about orders placed by customers.
 The table structure includes columns such as order_id, customer_id, order_details, amount_msat, currency, payment_method, status, and created_at.
-sql
 
-Copy code
 CREATE TABLE orders (
     order_id SERIAL PRIMARY KEY,
     customer_id INT NOT NULL,
