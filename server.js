@@ -32,6 +32,7 @@ app.post('/api/holdinvoicelookup', async (req, res) => {
 app.use('/api/order', orderRoutes); // Make sure you use app.use here to properly mount the route
 
 app.use('/api/payouts', payoutsRoutes);
+app.use('/api/orders', orderRoutes);
 
 
 app.listen(PORT, () => {

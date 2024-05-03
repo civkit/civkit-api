@@ -91,4 +91,10 @@ curl -X POST http://localhost:3000/api/payouts/submit -H "Content-Type: applicat
 }'
 ```
 
+
+
+```
+curl -X POST http://localhost:3000/api/orders/take      -H "Content-Type: application/json"      -d '{"orderId": 18, "takerDetails": {"description": "Detailed description for the taker"}}'
+```
+
 This command sends a POST request to the specified API endpoint (http://localhost:3000/api/order) with JSON data representing a new order. Modify the JSON data as needed to test different scenarios.

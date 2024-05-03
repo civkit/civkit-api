@@ -1,4 +1,4 @@
-import { postHoldinvoice } from './invoiceService.js'; // Ensure this import matches your project's structure
+import { postHoldinvoice, generateBolt11Invoice } from './invoiceService.js'; // Ensure this import matches your project's structure
 import { pool } from '../config/db.js'; // Updated to use named imports
 
 /**
@@ -36,11 +36,12 @@ async function addOrderAndGenerateInvoice(orderData) {
         // Insert the generated invoice into the invoices table
         const invoiceInsertText = `
             INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW() + INTERVAL '1 DAY')
+            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY')
             RETURNING *;
         `;
-        const invoiceResult = await client.query(invoiceInsertText, [order.order_id, invoiceData.bolt11, amount_msat, order_details, 'pending', invoiceData.payment_hash]);
+        const invoiceResult = await client.query(invoiceInsertText, [order.order_id, invoiceData.bolt11, amount_msat, order_details, invoiceData.payment_hash]);
         const invoice = invoiceResult.rows[0];
+        
 
         await client.query('COMMIT');
         return { order, invoice }; // Return the created order and invoice
@@ -52,4 +53,90 @@ async function addOrderAndGenerateInvoice(orderData) {
     }
 }
 
-export { addOrderAndGenerateInvoice };
+async function processTakeOrder(orderId, holdInvoice) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Validate hold invoice
+
+        // Update the order to mark as taken
+        const updateOrderText = `
+          UPDATE orders
+          SET status = 'depositing'
+          WHERE order_id = $1
+          RETURNING *;
+        `;
+        const updateResult = await client.query(updateOrderText, [orderId]);
+        const updatedOrder = updateResult.rows[0];
+
+        await client.query('COMMIT');
+        return { message: "deposit in progress", order: updatedOrder };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+async function generateTakerInvoice(orderId, takerDetails) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+    
+        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1`;
+        const orderDetailsResult = await client.query(orderDetailsQuery, [orderId]);
+
+        if (orderDetailsResult.rows.length === 0) {
+            throw new Error('No maker invoice found for this order ID');
+        }
+
+        const orderDetails = orderDetailsResult.rows[0];
+        const invoiceData = await generateBolt11Invoice(orderDetails.amount_msat, `Order ${orderId} for Taker`, takerDetails.description);
+  
+        const insertInvoiceText = `
+            INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type)
+            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'taker')
+            RETURNING *;
+        `;
+        const result = await client.query(insertInvoiceText, [orderId, invoiceData.bolt11, orderDetails.amount_msat, invoiceData.description, invoiceData.payment_hash]);
+        await client.query('COMMIT');
+        return result.rows[0];
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+  
+
+// Monitoring and updating the status
+async function checkAndUpdateOrderStatus(orderId, payment_hash) {
+    const client = await pool.connect();
+    try {
+        client.query('BEGIN');
+        
+        const checkInvoiceStatus = await queryInvoiceStatus(payment_hash); // Assume this function checks the payment status
+        if (checkInvoiceStatus === 'paid') {
+            const updateOrderText = `
+                UPDATE orders
+                SET status = 'bonds_locked'
+                WHERE order_id = $1
+                RETURNING *;
+            `;
+            const result = await client.query(updateOrderText, [orderId]);
+            client.query('COMMIT');
+            return result.rows[0];
+        }
+        client.query('ROLLBACK');
+    } catch (error) {
+        client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+export { addOrderAndGenerateInvoice, processTakeOrder, generateTakerInvoice, checkAndUpdateOrderStatus };
