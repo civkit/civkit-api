@@ -7,7 +7,7 @@ const pool = new Pool({
     user: process.env.DB_USER,       // e.g., 'postgres'
     host: process.env.DB_HOST,       // e.g., 'localhost'
     database: process.env.DB_NAME,   // e.g., 'civkit_escrow'
-    password: process.env.DB_PASSWORD,
+    password: String(process.env.DB_PASSWORD),
     port: parseInt(process.env.DB_PORT || '5432'), // Default PostgreSQL port
 });
 
