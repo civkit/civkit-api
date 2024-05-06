@@ -120,44 +120,123 @@ async function syncInvoicesWithNode() {
   }
 }
 
-async function generateBolt11Invoice(amount_msat, label, description) {
-  const data = {
-      amount_msat: parseInt(amount_msat),
-      label,
-      description,
-      cltv: 770,
-  };
+async function syncPayoutsWithNode() {
+  const agent = new https.Agent({
+    rejectUnauthorized: false // DANGER: Only for development, remove in production!
+  });
+
+  const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Rune': MY_RUNE,
+    },
+    agent
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP Error: ${response.status}`);
+  }
+
+  const { invoices } = await response.json();
+
+  const client = await pool.connect();
   try {
-      const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
-          method: 'POST',
-          headers: {
-              'Accept': 'application/json',
-              'Rune': MY_RUNE,
-              'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(data),
-          agent: new https.Agent({ rejectUnauthorized: false }),
-      });
+    await client.query('BEGIN');
+    for (const invoice of invoices) {
+      const ln_invoice = invoice.bolt11; // This assumes 'bolt11' is the field name for the invoice in the response
+      const res = await client.query(
+        'SELECT status FROM payouts WHERE ln_invoice = $1',
+        [ln_invoice]
+      );
 
-      if (!response.ok) {
-          throw new Error(`HTTP Error: ${response.status}`);
+      if (res.rows.length > 0 && res.rows[0].status !== invoice.status) {
+        await client.query(
+          'UPDATE payouts SET status = $1 WHERE ln_invoice = $2',
+          [invoice.status, ln_invoice]
+        );
+        console.log(`Payout status updated for ln_invoice ${ln_invoice}`);
       }
-
-      const invoiceData = await response.json();
-      if (!invoiceData.bolt11) {
-          console.error('Response missing bolt11:', invoiceData);
-          throw new Error('bolt11 is missing in the response');
-      }
-      return invoiceData;
+    }
+    await client.query('COMMIT');
   } catch (error) {
-      console.error('Error in generating Bolt11 invoice:', error);
-      throw error;
+    console.error('Error updating payout statuses:', error);
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
 }
+
+
+async function generateBolt11Invoice(amount_msat, label, description, type, premium) {
+  const data = {
+    amount_msat: parseInt(amount_msat),
+    label,
+    description,
+    cltv: 770,
+    type,    // Assuming the API supports this directly or needs additional handling
+    premium  // Same as above
+  };
+  try {
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+      agent: new https.Agent({ rejectUnauthorized: false }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    const invoiceData = await response.json();
+    if (!invoiceData.bolt11) {
+      console.error('Response missing bolt11:', invoiceData);
+      throw new Error('bolt11 is missing in the response');
+    }
+    return invoiceData;
+  } catch (error) {
+    console.error('Error in generating Bolt11 invoice:', error);
+    throw error;
+  }
+}
+
+async function settleHoldInvoice(payment_hash) {
+  try {
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/settleinvoice`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payment_hash }),
+      agent: new https.Agent({ rejectUnauthorized: false })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    return await response.json();  // Expecting a confirmation response from the Lightning node
+  } catch (error) {
+    console.error('Failed to settle invoice:', error);
+    throw error;
+  }
+}
+
+
 
 export {
   postHoldinvoice,
   holdInvoiceLookup,
   generateBolt11Invoice,
-  syncInvoicesWithNode
+  syncInvoicesWithNode,
+  syncPayoutsWithNode,
+  settleHoldInvoice
 };

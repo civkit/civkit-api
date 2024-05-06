@@ -1,5 +1,5 @@
 import express from 'express';
-import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode } from './services/invoiceService.js';
+import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode } from './services/invoiceService.js';
 import orderRoutes from './routes/orderRoutes.js'; // Ensure this import is correct
 import payoutsRoutes from './routes/payouts.js';
 
@@ -42,6 +42,16 @@ app.post('/api/sync-invoices', async (req, res) => {
   } catch (error) {
     console.error('Failed to sync invoices:', error);
     res.status(500).json({ message: 'Failed to synchronize invoices', error: error.message });
+  }
+});
+
+
+app.get('/api/sync-payouts', async (req, res) => {
+  try {
+    await syncPayoutsWithNode();
+    res.status(200).json({ message: 'Payouts synchronized successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to synchronize payouts', error: error.message });
   }
 });
 

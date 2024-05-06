@@ -73,6 +73,21 @@ curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json"
   "payment_method": "Credit Card",
   "status": "Pending"
 }'
+
+--------------------------------------------
+after adding gields type and premium
+
+curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" -d '{
+  "customer_id": 1234567,
+  "order_details": "New Order for Testing",
+  "amount_msat": 50000,
+  "currency": "USD",
+  "payment_method": "Credit Card",
+  "status": "Pending",
+  "type": 1,
+  "premium": 1.5
+}'
+
 ```
 
 check payment hash status
@@ -102,3 +117,4 @@ curl -X POST http://localhost:3000/api/sync-invoices
 {"message":"Invoices synchronized successfully"}
 ```
 
+when both invoices for an orderid switch to paid, the chatroom should open.

@@ -85,7 +85,7 @@ async function generateTakerInvoice(orderId, takerDetails) {
     try {
         await client.query('BEGIN');
     
-        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1`;
+        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1 AND invoice_type = 'maker'`;
         const orderDetailsResult = await client.query(orderDetailsQuery, [orderId]);
 
         if (orderDetailsResult.rows.length === 0) {
