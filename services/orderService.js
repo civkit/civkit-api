@@ -23,6 +23,7 @@ async function addOrderAndGenerateInvoice(orderData) {
     try {
         await client.query('BEGIN');
 
+        // Insert the order into the database
         const orderInsertText = `
             INSERT INTO orders (customer_id, order_details, amount_msat, currency, payment_method, status, type, premium, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
@@ -34,10 +35,26 @@ async function addOrderAndGenerateInvoice(orderData) {
         // Post the hold invoice for 5%
         const holdInvoiceData = await postHoldinvoice(amount_msat, `Hold Invoice for Order ${order.order_id}`, order_details);
 
+        // Save hold invoice data to the database
+        const holdInvoiceInsertText = `
+            INSERT INTO invoices (order_id, bolt11, amount_msat, status, description, payment_hash, created_at, expires_at, invoice_type)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW() + INTERVAL '1 DAY', 'hold')
+            RETURNING *;
+        `;
+        await client.query(holdInvoiceInsertText, [order.order_id, holdInvoiceData.bolt11, amount_msat, holdInvoiceData.status, order_details, holdInvoiceData.payment_hash]);
+
         // Post the full amount invoice for type 1
         let fullInvoiceData = null;
         if (type === 1) {
             fullInvoiceData = await postFullAmountInvoice(amount_msat, `Full Amount Invoice for Order ${order.order_id}`, order_details, order.order_id, type);
+            
+            // Save full amount invoice data to the database
+            const fullInvoiceInsertText = `
+                INSERT INTO invoices (order_id, bolt11, amount_msat, status, description, payment_hash, created_at, expires_at, invoice_type)
+                VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW() + INTERVAL '1 DAY', 'full')
+                RETURNING *;
+            `;
+            await client.query(fullInvoiceInsertText, [order.order_id, fullInvoiceData.bolt11, amount_msat, fullInvoiceData.status, order_details, fullInvoiceData.payment_hash]);
         }
 
         await client.query('COMMIT');
@@ -50,6 +67,7 @@ async function addOrderAndGenerateInvoice(orderData) {
         client.release();
     }
 }
+
 async function processTakeOrder(orderId, holdInvoice) {
     const client = await pool.connect();
     try {
