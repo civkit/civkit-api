@@ -30,6 +30,8 @@ CREATE TABLE orders (
     status VARCHAR(20),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE orders ADD COLUMN premium NUMERIC(5, 2) DEFAULT 0.00;
 ```
 
 Create the Invoices Table:
@@ -47,6 +49,9 @@ CREATE TABLE invoices (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ
 );
+
+ALTER TABLE invoices
+ADD COLUMN invoice_type VARCHAR(10);
 ```
 
 ```

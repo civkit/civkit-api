@@ -78,7 +78,7 @@ async function holdInvoiceLookup({ state, payment_hash }) {
 
 async function syncInvoicesWithNode() {
   const agent = new https.Agent({
-    rejectUnauthorized: false  // DANGER: This disables SSL/TLS certificate verification.
+    rejectUnauthorized: false  // Reminder: Ensure to handle SSL/TLS certificate verification correctly in production.
   });
 
   const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
@@ -98,21 +98,44 @@ async function syncInvoicesWithNode() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const orderUpdates = {}; // Track updated statuses for orders
+
     for (const invoice of invoices) {
       const res = await client.query(
-        'SELECT status FROM invoices WHERE payment_hash = $1',
+        'SELECT status, order_id FROM invoices WHERE payment_hash = $1',
         [invoice.payment_hash]
       );
-      if (res.rows.length > 0 && res.rows[0].status !== invoice.status) {
-        await client.query(
-          'UPDATE invoices SET status = $1 WHERE payment_hash = $2',
-          [invoice.status, invoice.payment_hash]
-        );
+      if (res.rows.length > 0) {
+        const { status, order_id } = res.rows[0];
+        if (status !== invoice.status) {
+          await client.query(
+            'UPDATE invoices SET status = $1 WHERE payment_hash = $2',
+            [invoice.status, invoice.payment_hash]
+          );
+        }
+
+        // Collect order ids with potentially completed payments
+        if (!orderUpdates[order_id]) {
+          orderUpdates[order_id] = [];
+        }
+        orderUpdates[order_id].push(invoice.status);
       }
     }
+
+    // Check if all invoices under an order are marked as 'paid'
+    for (const order_id in orderUpdates) {
+      if (orderUpdates[order_id].every(status => status === 'paid')) {
+        await client.query(
+          'UPDATE orders SET status = $1 WHERE order_id = $2',
+          ['bonds_locked', order_id]
+        );
+        console.log(`Order ${order_id} updated to bonds_locked`);
+      }
+    }
+
     await client.query('COMMIT');
-    console.log('Invoices updated successfully');
   } catch (error) {
+    console.error('Error while syncing invoices:', error);
     await client.query('ROLLBACK');
     throw error;
   } finally {
