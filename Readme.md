@@ -118,9 +118,7 @@ curl -X POST http://localhost:3000/api/orders/take      -H "Content-Type: applic
 
 sync invoices table to lightning node
 ```
-
-
-
+curl -X POST http://localhost:3000/api/sync-invoices
 {"message":"Invoices synchronized successfully"}
 ```
 
