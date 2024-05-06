@@ -253,7 +253,44 @@ async function settleHoldInvoice(payment_hash) {
   }
 }
 
+async function postFullAmountInvoice(amount_msat, label, description, orderId, orderType) {
+  if (orderType !== 1) {
+      // If the order type is not 1, do not create a full amount invoice
+      console.log(`Full amount invoice not required for order type ${orderType}.`);
+      return null;
+  }
 
+  const data = {
+      amount_msat,  // Use the full amount
+      label,
+      description,
+      cltv: 770,
+  };
+
+  try {
+      const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
+          method: 'POST',
+          headers: {
+              'Accept': 'application/json',
+              'Rune': MY_RUNE,
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data),
+          agent: new https.Agent({ rejectUnauthorized: false })
+      });
+
+      if (!response.ok) {
+          throw new Error(`HTTP Error: ${response.status} while posting full amount invoice`);
+      }
+
+      const invoiceData = await response.json();
+      console.log(`Full amount invoice created for order ${orderId}`);
+      return invoiceData;
+  } catch (error) {
+      console.error('Failed to post full amount invoice:', error);
+      throw error;
+  }
+}
 
 export {
   postHoldinvoice,
@@ -261,5 +298,6 @@ export {
   generateBolt11Invoice,
   syncInvoicesWithNode,
   syncPayoutsWithNode,
-  settleHoldInvoice
+  settleHoldInvoice,
+  postFullAmountInvoice
 };

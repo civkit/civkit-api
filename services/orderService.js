@@ -1,4 +1,5 @@
-import { postHoldinvoice, generateBolt11Invoice } from './invoiceService.js'; // Ensure this import matches your project's structure
+import { postHoldinvoice, generateBolt11Invoice, postFullAmountInvoice
+ } from './invoiceService.js'; // Ensure this import matches your project's structure
 import { pool } from '../config/db.js'; // Updated to use named imports
 
 /**
@@ -14,46 +15,41 @@ async function addOrderAndGenerateInvoice(orderData) {
         currency,
         payment_method,
         status,
-        type,           // Ensure type is included in orderData object
-        premium         // Assuming premium might also need to be included
+        type,
+        premium
     } = orderData;
 
     const client = await pool.connect();
-
     try {
         await client.query('BEGIN');
 
-        // Include type and premium in the INSERT statement
         const orderInsertText = `
-          INSERT INTO orders (customer_id, order_details, amount_msat, currency, payment_method, status, type, premium, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-          RETURNING *;
+            INSERT INTO orders (customer_id, order_details, amount_msat, currency, payment_method, status, type, premium, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            RETURNING *;
         `;
         const orderResult = await client.query(orderInsertText, [customer_id, order_details, amount_msat, currency, payment_method, status, type, premium]);
         const order = orderResult.rows[0];
 
-        // Assuming postHoldinvoice function is capable of handling the order correctly
-        const invoiceData = await postHoldinvoice(amount_msat, `Order ${order.order_id}`, order_details);
+        // Post the hold invoice for 5%
+        const holdInvoiceData = await postHoldinvoice(amount_msat, `Hold Invoice for Order ${order.order_id}`, order_details);
 
-        // Insert the generated invoice data into the invoices table
-        const invoiceInsertText = `
-            INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at)
-            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY')
-            RETURNING *;
-        `;
-        const invoiceResult = await client.query(invoiceInsertText, [order.order_id, invoiceData.bolt11, amount_msat, order_details, invoiceData.payment_hash]);
-        const invoice = invoiceResult.rows[0];
+        // Post the full amount invoice for type 1
+        let fullInvoiceData = null;
+        if (type === 1) {
+            fullInvoiceData = await postFullAmountInvoice(amount_msat, `Full Amount Invoice for Order ${order.order_id}`, order_details, order.order_id, type);
+        }
 
         await client.query('COMMIT');
-        return { order, invoice };
+        return { order, holdInvoice: holdInvoiceData, fullAmountInvoice: fullInvoiceData };
     } catch (error) {
         await client.query('ROLLBACK');
+        console.error('Transaction failed:', error);
         throw error;
     } finally {
         client.release();
     }
 }
-
 async function processTakeOrder(orderId, holdInvoice) {
     const client = await pool.connect();
     try {
