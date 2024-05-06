@@ -18,7 +18,8 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
-async function postHoldinvoice(amount_msat, label, description) {
+async function postHoldinvoice(totalAmountMsat, label, description) {
+  const amount_msat = Math.round(totalAmountMsat * 0.05);  // Calculate 5% of the total amount
   const data = {
     amount_msat,
     label,
@@ -47,7 +48,6 @@ async function postHoldinvoice(amount_msat, label, description) {
     throw error;
   }
 }
-
 async function holdInvoiceLookup({ state, payment_hash }) {
   try {
     const bodyData = state ? { state } : { payment_hash };
