@@ -1,5 +1,5 @@
 import express from 'express';
-import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode } from './services/invoiceService.js';
+import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode, handleFiatReceived } from './services/invoiceService.js';
 import orderRoutes from './routes/orderRoutes.js'; // Ensure this import is correct
 import payoutsRoutes from './routes/payouts.js';
 
@@ -55,7 +55,18 @@ app.get('/api/sync-payouts', async (req, res) => {
   }
 });
 
-
+// Function to handle 'fiat received'
+app.post('/api/fiat-received', async (req, res) => {
+  try {
+    const { order_id } = req.body;
+    // Assuming you have a function called handleFiatReceived in your invoice service
+    await handleFiatReceived(order_id);
+    res.status(200).json({ message: 'Fiat received processed successfully' });
+  } catch (error) {
+    console.error('Error processing fiat received:', error);
+    res.status(500).json({ message: 'Error processing fiat received', error: error.message });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

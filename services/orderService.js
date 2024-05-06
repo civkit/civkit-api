@@ -1,5 +1,4 @@
-import { postHoldinvoice, generateBolt11Invoice, postFullAmountInvoice
- } from './invoiceService.js'; // Ensure this import matches your project's structure
+import { postHoldinvoice, generateBolt11Invoice, postFullAmountInvoice,  handleFiatReceived } from './invoiceService.js'; // Ensure this import matches your project's structure
 import { pool } from '../config/db.js'; // Updated to use named imports
 
 /**
@@ -154,4 +153,33 @@ async function checkAndUpdateOrderStatus(orderId, payment_hash) {
     }
 }
 
-export { addOrderAndGenerateInvoice, processTakeOrder, generateTakerInvoice, checkAndUpdateOrderStatus };
+async function handleFiatReceivedAndUpdateOrder(orderId) {
+    try {
+        await handleFiatReceived(orderId);
+        console.log("Order status updated to indicate fiat received.");
+    } catch (error) {
+        console.error("Error updating order status:", error);
+        throw error;
+    }
+}
+
+async function updatePayoutStatus(orderId, status) {
+    const db = await import('../config/db.js'); // Import the database module dynamically
+
+    try {
+        // Update the status of the payout in the payouts table
+        const result = await db.query('UPDATE payouts SET status = $1 WHERE order_id = $2 RETURNING *', [status, orderId]);
+
+        // Check if the payout was updated successfully
+        if (result.rows.length === 0) {
+            throw new Error('Failed to update payout status');
+        }
+
+        return result.rows[0];
+    } catch (error) {
+        throw error;
+    }
+}
+
+
+export { addOrderAndGenerateInvoice, processTakeOrder, generateTakerInvoice, checkAndUpdateOrderStatus, handleFiatReceivedAndUpdateOrder , updatePayoutStatus};

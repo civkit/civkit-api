@@ -3,6 +3,10 @@ import fetch from 'node-fetch';
 import https from 'https';
 import { config } from 'dotenv';
 import pkg from 'pg';  // Corrected import for CommonJS module
+import { retrievePayoutInvoice } from './payoutService.js';
+import { createPayout } from './payoutService.js';
+import { updatePayoutStatus } from './orderService.js';
+
 const { Pool } = pkg;
 
 config(); // This line configures dotenv to load the environment variables
@@ -292,6 +296,18 @@ async function postFullAmountInvoice(amount_msat, label, description, orderId, o
   }
 }
 
+async function handleFiatReceived(orderId) {
+  try {
+    // Update the status of the payout to 'paid'
+    await updatePayoutStatus(orderId, 'paid');
+
+    console.log("Order status updated to indicate fiat received.");
+  } catch (error) {
+    console.error("Error updating order status:", error);
+    throw error;
+  }
+}
+
 export {
   postHoldinvoice,
   holdInvoiceLookup,
@@ -299,5 +315,6 @@ export {
   syncInvoicesWithNode,
   syncPayoutsWithNode,
   settleHoldInvoice,
-  postFullAmountInvoice
+  postFullAmountInvoice,
+  handleFiatReceived
 };

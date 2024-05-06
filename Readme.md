@@ -123,3 +123,7 @@ curl -X POST http://localhost:3000/api/sync-invoices
 ```
 
 when both invoices for an orderid switch to paid, the chatroom should open.
+
+```
+curl -X POST http://localhost:3000/api/fiat-received -H "Content-Type: application/json" -d '{"order_id": 55}'
+```
