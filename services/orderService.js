@@ -7,33 +7,35 @@ import { pool } from '../config/db.js'; // Updated to use named imports
  * @returns {Promise<Object>} - The created order and invoice data.
  */
 async function addOrderAndGenerateInvoice(orderData) {
-    const { 
+    const {
         customer_id,
         order_details,
         amount_msat,
-        currency,        // New column
-        payment_method,  // New column
-        status           // New column
+        currency,
+        payment_method,
+        status,
+        type,           // Ensure type is included in orderData object
+        premium         // Assuming premium might also need to be included
     } = orderData;
-    
-    const client = await pool.connect(); // Directly use pool for database operations
-    
+
+    const client = await pool.connect();
+
     try {
         await client.query('BEGIN');
-    
-        // Insert the new order into the database
+
+        // Include type and premium in the INSERT statement
         const orderInsertText = `
-          INSERT INTO orders (customer_id, order_details, amount_msat, currency, payment_method, status, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, NOW())
+          INSERT INTO orders (customer_id, order_details, amount_msat, currency, payment_method, status, type, premium, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
           RETURNING *;
         `;
-        const orderResult = await client.query(orderInsertText, [customer_id, order_details, amount_msat, currency, payment_method, status]);
+        const orderResult = await client.query(orderInsertText, [customer_id, order_details, amount_msat, currency, payment_method, status, type, premium]);
         const order = orderResult.rows[0];
-    
-        // Generate a hold invoice using the invoice service
+
+        // Assuming postHoldinvoice function is capable of handling the order correctly
         const invoiceData = await postHoldinvoice(amount_msat, `Order ${order.order_id}`, order_details);
-        
-        // Insert the generated invoice into the invoices table
+
+        // Insert the generated invoice data into the invoices table
         const invoiceInsertText = `
             INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at)
             VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY')
@@ -41,15 +43,14 @@ async function addOrderAndGenerateInvoice(orderData) {
         `;
         const invoiceResult = await client.query(invoiceInsertText, [order.order_id, invoiceData.bolt11, amount_msat, order_details, invoiceData.payment_hash]);
         const invoice = invoiceResult.rows[0];
-        
 
         await client.query('COMMIT');
-        return { order, invoice }; // Return the created order and invoice
+        return { order, invoice };
     } catch (error) {
         await client.query('ROLLBACK');
-        throw error;  // This error will be caught by the Express error handler
+        throw error;
     } finally {
-        client.release(); // Ensure the database client is released regardless of the outcome
+        client.release();
     }
 }
 
