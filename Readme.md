@@ -80,7 +80,7 @@ curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json"
 }'
 
 --------------------------------------------
-after adding gields type and premium
+after adding fields type and premium
 
 curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" -d '{
   "customer_id": 1234567,

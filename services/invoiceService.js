@@ -5,7 +5,7 @@ import { config } from 'dotenv';
 import pkg from 'pg';  // Corrected import for CommonJS module
 import { retrievePayoutInvoice } from './payoutService.js';
 import { createPayout } from './payoutService.js';
-import { updatePayoutStatus } from './orderService.js';
+//import { updatePayoutStatus } from './orderService.js';
 
 const { Pool } = pkg;
 
@@ -233,29 +233,6 @@ async function generateBolt11Invoice(amount_msat, label, description, type, prem
   }
 }
 
-async function settleHoldInvoice(payment_hash) {
-  try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/settleinvoice`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Rune': MY_RUNE,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ payment_hash }),
-      agent: new https.Agent({ rejectUnauthorized: false })
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
-
-    return await response.json();  // Expecting a confirmation response from the Lightning node
-  } catch (error) {
-    console.error('Failed to settle invoice:', error);
-    throw error;
-  }
-}
 
 async function postFullAmountInvoice(amount_msat, label, description, orderId, orderType) {
   if (orderType !== 1) {
@@ -297,16 +274,123 @@ async function postFullAmountInvoice(amount_msat, label, description, orderId, o
 }
 
 async function handleFiatReceived(orderId) {
+  const client = await pool.connect();
   try {
-    // Update the status of the payout to 'paid'
-    await updatePayoutStatus(orderId, 'paid');
+      await client.query('BEGIN'); // Start the transaction
 
-    console.log("Order status updated to indicate fiat received.");
+      // Update payout status to 'fiat_received'
+      const updateResult = await updatePayoutStatus(client, orderId, 'fiat_received');
+      if (updateResult.rowCount === 0) {
+          throw new Error('No corresponding payout found or update failed');
+      }
+
+      // Retrieve the payout invoice details (LN invoice being paid from)
+      const payoutDetails = await client.query(
+          `SELECT ln_invoice FROM payouts WHERE order_id = $1`,
+          [orderId]
+      );
+      if (payoutDetails.rows.length === 0) {
+          throw new Error('No payout details found for this order');
+      }
+      const payoutInvoice = payoutDetails.rows[0].ln_invoice;
+
+      // Retrieve the originating FULL invoice details (LN invoice marked as FULL)
+      const fullInvoiceDetails = await client.query(
+          `SELECT bolt11 FROM invoices WHERE order_id = $1 AND invoice_type = 'full'`,
+          [orderId]
+      );
+      if (fullInvoiceDetails.rows.length === 0) {
+          throw new Error('No FULL invoice details found for this order');
+      }
+      const fullInvoice = fullInvoiceDetails.rows[0].bolt11;
+
+      // Log the originating FULL invoice and the payout invoice details
+      console.log("Originating FULL LN Invoice:", fullInvoice);
+      console.log("Payout LN Invoice:", payoutInvoice);
+
+      // Attempt to settle the hold invoice (using the payout invoice)
+      const settlementResult = await settleHoldInvoice(payoutInvoice);
+      if (!settlementResult || settlementResult.status !== 'succeeded') {
+          throw new Error('Failed to settle hold invoice');
+      }
+
+      // Log the successful settlement
+      console.log("Successfully settled invoice for LN Invoice:", payoutInvoice);
+
+      await client.query('COMMIT'); // Commit the transaction if everything is successful
+      console.log("Fiat received and invoice settled successfully.");
   } catch (error) {
-    console.error("Error updating order status:", error);
-    throw error;
+      await client.query('ROLLBACK'); // Rollback the transaction on error
+      console.error("Error processing fiat received:", error);
+      throw error;
+  } finally {
+      client.release(); // Release the database connection
   }
 }
+
+async function updatePayoutStatus(client, orderId, status) {
+    try {
+        // Update the status of the payout in the payouts table
+        const result = await client.query(
+            'UPDATE payouts SET status = $1 WHERE order_id = $2 RETURNING *',
+            [status, orderId]
+        );
+
+        // Check if the payout was updated successfully
+        if (result.rows.length === 0) {
+            throw new Error('Failed to update payout status');
+        }
+
+        return result;
+    } catch (error) {
+        throw error;
+    }
+}
+
+
+async function settleHoldInvoice(lnInvoice) {
+  try {
+      const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
+          method: 'POST',
+          headers: {
+              'Accept': 'application/json',
+              'Rune': MY_RUNE,
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ payment_hash: lnInvoice }),
+          agent: new https.Agent({ rejectUnauthorized: false }) // Reminder to handle SSL in production
+      });
+
+      if (!response.ok) {
+          throw new Error(`HTTP Error: ${response.status}`);
+      }
+
+      return await response.json(); // Returns a confirmation of the invoice settlement
+  } catch (error) {
+      console.error('Failed to settle invoice:', error);
+      throw error;
+  }
+}
+
+
+
+async function checkAndProcessPendingPayouts() {
+  const client = await pool.connect();
+  try {
+      const result = await client.query(
+          "SELECT order_id FROM payouts WHERE status = 'fiat_received'"
+      );
+
+      for (const row of result.rows) {
+          await handleFiatReceived(row.order_id);
+      }
+  } catch (error) {
+      console.error('Error processing pending payouts:', error);
+  } finally {
+      client.release();
+  }
+}
+
 
 export {
   postHoldinvoice,
@@ -314,7 +398,9 @@ export {
   generateBolt11Invoice,
   syncInvoicesWithNode,
   syncPayoutsWithNode,
-  settleHoldInvoice,
   postFullAmountInvoice,
-  handleFiatReceived
+  handleFiatReceived,
+  settleHoldInvoice,
+  checkAndProcessPendingPayouts,
+  updatePayoutStatus
 };
