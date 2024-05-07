@@ -101,7 +101,7 @@ async function generateTakerInvoice(orderId, takerDetails) {
     try {
         await client.query('BEGIN');
     
-        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1 AND invoice_type = 'maker'`;
+        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1`;
         const orderDetailsResult = await client.query(orderDetailsQuery, [orderId]);
 
         if (orderDetailsResult.rows.length === 0) {
@@ -109,14 +109,18 @@ async function generateTakerInvoice(orderId, takerDetails) {
         }
 
         const orderDetails = orderDetailsResult.rows[0];
-        const invoiceData = await generateBolt11Invoice(orderDetails.amount_msat, `Order ${orderId} for Taker`, takerDetails.description);
+        
+        // Calculate the invoice amount as 5% of the amount in msat
+        const invoiceAmountMsat = Math.floor(orderDetails.amount_msat * 0.05);
+
+        const invoiceData = await generateBolt11Invoice(invoiceAmountMsat, `Order ${orderId} for Taker`, takerDetails.description);
   
         const insertInvoiceText = `
             INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type)
             VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'taker')
             RETURNING *;
         `;
-        const result = await client.query(insertInvoiceText, [orderId, invoiceData.bolt11, orderDetails.amount_msat, invoiceData.description, invoiceData.payment_hash]);
+        const result = await client.query(insertInvoiceText, [orderId, invoiceData.bolt11, invoiceAmountMsat, invoiceData.description, invoiceData.payment_hash]);
         await client.query('COMMIT');
         return result.rows[0];
     } catch (error) {
@@ -126,7 +130,7 @@ async function generateTakerInvoice(orderId, takerDetails) {
         client.release();
     }
 }
-  
+
 
 // Monitoring and updating the status
 async function checkAndUpdateOrderStatus(orderId, payment_hash) {

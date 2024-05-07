@@ -124,6 +124,7 @@ curl -X POST http://localhost:3000/api/sync-invoices
 
 when both invoices for an orderid switch to paid, the chatroom should open.
 
+fiat received endpoint. it will payout to the payout invoice for that id. payout not working entre\ly yet.
 ```
 curl -X POST http://localhost:3000/api/fiat-received -H "Content-Type: application/json" -d '{"order_id": 55}'
 ```
