@@ -1,5 +1,7 @@
 import { postHoldinvoice, generateBolt11Invoice, postFullAmountInvoice,  handleFiatReceived } from './invoiceService.js'; // Ensure this import matches your project's structure
 import { pool } from '../config/db.js'; // Updated to use named imports
+import { config } from 'dotenv';
+config(); // Make sure this is called before using process.env variables
 
 /**
  * Add a new order and generate an invoice.

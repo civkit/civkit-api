@@ -1,3 +1,6 @@
+import { config } from 'dotenv';
+config(); // Make sure this is called before using process.env variables
+
 async function createPayout(order_id, ln_invoice, status = 'pending') {
     const db = await import('../config/db.js');  // Dynamically import the CommonJS module
 
