@@ -372,6 +372,70 @@ async function settleHoldInvoice(lnInvoice) {
   }
 }
 
+async function generateAndSettleHoldInvoice(amount_msat, label, description, type, premium) {
+  const data = {
+    amount_msat: parseInt(amount_msat),
+    label,
+    description,
+    cltv: 770,
+    type,
+    premium
+  };
+
+  try {
+    // Generate the hold invoice
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+      agent: new https.Agent({ rejectUnauthorized: false }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    const invoiceData = await response.json();
+    if (!invoiceData.bolt11) {
+      console.error('Response missing bolt11:', invoiceData);
+      throw new Error('bolt11 is missing in the response');
+    }
+
+    // Extract payment_hash from the generated invoice
+    const { payment_hash } = invoiceData;
+    console.log('Generated hold invoice:', invoiceData);
+
+    // Settle the hold invoice
+    const settleResponse = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payment_hash }),
+      agent: new https.Agent({ rejectUnauthorized: false }),
+    });
+
+    if (!settleResponse.ok) {
+      throw new Error(`HTTP Error: ${settleResponse.status}`);
+    }
+
+    const settleData = await settleResponse.json();
+    console.log('Settled hold invoice:', settleData);
+
+    return { invoiceData, settleData };
+
+  } catch (error) {
+    console.error('Error in generating and settling hold invoice:', error);
+    throw error;
+  }
+}
+
 
 
 async function checkAndProcessPendingPayouts() {
@@ -391,6 +455,35 @@ async function checkAndProcessPendingPayouts() {
   }
 }
 
+const settleHoldInvoiceByHash = async (payment_hash) => {
+  try {
+    console.log(`Settling hold invoice with payment_hash: ${payment_hash}`);
+
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
+      method: 'POST', // Ensure the method is POST as per documentation
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payment_hash }),
+      agent: new https.Agent({ rejectUnauthorized: false }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    const settleData = await response.json();
+    console.log('Settled hold invoice:', settleData);
+
+    return settleData;
+  } catch (error) {
+    console.error('Error in settling hold invoice:', error);
+    throw error;
+  }
+};
+
 
 export {
   postHoldinvoice,
@@ -402,5 +495,6 @@ export {
   handleFiatReceived,
   settleHoldInvoice,
   checkAndProcessPendingPayouts,
-  updatePayoutStatus
+  updatePayoutStatus,
+  settleHoldInvoiceByHash
 };

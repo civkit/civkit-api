@@ -1,5 +1,5 @@
 import express from 'express';
-import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode, handleFiatReceived } from './services/invoiceService.js';
+import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode, handleFiatReceived, settleHoldInvoiceByHash } from './services/invoiceService.js';
 import orderRoutes from './routes/orderRoutes.js'; // Ensure this import is correct
 import payoutsRoutes from './routes/payouts.js';
 
@@ -65,6 +65,19 @@ app.post('/api/fiat-received', async (req, res) => {
   } catch (error) {
     console.error('Error processing fiat received:', error);
     res.status(500).json({ message: 'Error processing fiat received', error: error.message });
+  }
+});
+
+
+// Function to handle 'settle hold invoice' by payment hash
+app.post('/api/settle-holdinvoice', async (req, res) => {
+  try {
+    const { payment_hash } = req.body;
+    const result = await settleHoldInvoiceByHash(payment_hash);
+    res.status(200).json({ message: 'Hold invoice settled successfully', result });
+  } catch (error) {
+    console.error('Error settling hold invoice:', error);
+    res.status(500).json({ message: 'Error settling hold invoice', error: error.message });
   }
 });
 

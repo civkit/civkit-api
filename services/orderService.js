@@ -109,10 +109,8 @@ async function generateTakerInvoice(orderId, takerDetails) {
         }
 
         const orderDetails = orderDetailsResult.rows[0];
-        
-        // Calculate the invoice amount as 5% of the amount in msat
-        const invoiceAmountMsat = Math.floor(orderDetails.amount_msat * 0.05);
-
+        const amountPercentage = 0.05; // 5% of the amount_msat
+        const invoiceAmountMsat = Math.round(orderDetails.amount_msat * amountPercentage);
         const invoiceData = await generateBolt11Invoice(invoiceAmountMsat, `Order ${orderId} for Taker`, takerDetails.description);
   
         const insertInvoiceText = `
@@ -130,7 +128,6 @@ async function generateTakerInvoice(orderId, takerDetails) {
         client.release();
     }
 }
-
 
 // Monitoring and updating the status
 async function checkAndUpdateOrderStatus(orderId, payment_hash) {

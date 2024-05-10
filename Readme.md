@@ -115,6 +115,7 @@ take order
 ```
 curl -X POST http://localhost:3000/api/orders/take      -H "Content-Type: application/json"      -d '{"orderId": 18, "takerDetails": {"description": "Detailed description for the taker"}}'
 ```
+curl -X POST http://localhost:3000/api/orders/take      -H "Content-Type: application/json"      -d '{"orderId": 62, "takerDetails": {"description": "Detailed description for the taker"}}'
 
 sync invoices table to lightning node
 ```
@@ -124,7 +125,14 @@ curl -X POST http://localhost:3000/api/sync-invoices
 
 when both invoices for an orderid switch to paid, the chatroom should open.
 
-fiat received endpoint. it will payout to the payout invoice for that id. payout not working entre\ly yet.
+fiat received endpoint. it will payout to the payout invoice for that id. payout not working entrely yet.
 ```
 curl -X POST http://localhost:3000/api/fiat-received -H "Content-Type: application/json" -d '{"order_id": 55}'
+```
+Settle a hold invoice by payment hash
+```
+ curl -X POST http://localhost:3000/api/settle-holdinvoice -H "Content-Type: application/json" -d '{
+  "payment_hash": "018096e8925ed3e1d32a3b0589994a4f85d39e1a82ff1d4830cdcc5b8d42218e"
+}'
+{"message":"Hold invoice settled successfully","result":{"state":"settled"}}
 ```
