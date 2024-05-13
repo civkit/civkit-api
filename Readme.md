@@ -159,8 +159,9 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/settle-holdinvoice -H "Content-Type: application/json" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTU2MTAyMTUsImV4cCI6MTcxNTYxMzgxNX0.GAhNwEjzoqNd0vSA7lHGL3zmhtJBkYhb-ZqNeOJ6m0M" \
       -d '{
-        "payment_hash": "049c7e172dfa8fcee31669795ed31178f23a964a9251f6fe2ac6c7f7c98010be"
+        "payment_hash": "f6b9e1824a3f0c71ecab49452b32e6d7d41f3c082f43b6e1e413cd159a341fe9"
       }'
       ```
 
