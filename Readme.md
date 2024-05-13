@@ -126,13 +126,36 @@ curl -X POST http://localhost:3000/api/sync-invoices
 when both invoices for an orderid switch to paid, the chatroom should open.
 
 fiat received endpoint. it will payout to the payout invoice for that id. payout not working entrely yet.
+
 ```
 curl -X POST http://localhost:3000/api/fiat-received -H "Content-Type: application/json" -d '{"order_id": 55}'
 ```
 Settle a hold invoice by payment hash
 ```
  curl -X POST http://localhost:3000/api/settle-holdinvoice -H "Content-Type: application/json" -d '{
-  "payment_hash": "018096e8925ed3e1d32a3b0589994a4f85d39e1a82ff1d4830cdcc5b8d42218e"
+  "payment_hash": "049c7e172dfa8fcee31669795ed31178f23a964a9251f6fe2ac6c7f7c98010be"
 }'
 {"message":"Hold invoice settled successfully","result":{"state":"settled"}}
 ```
+
+
+curl -X POST http://localhost:3000/api/orders/take      -H "Content-Type: application/json"      -d '{"orderId": 69, "takerDetails": {"description": "Detailed description for the taker"}}'
+
+
+
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,  -- This will store the hashed password
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
+-H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwidXNlcm5hbWUiOiJ1c2VyMSIsImlhdCI6MTcxNTU4NjE2MSwiZXhwIjoxNzE1NTg5NzYxfQ.UZIu8FuFm8SOOdfEcHwIYprqoocIE3rw8KBynDcAap8" -d '{
+  "orderId": 69,
+  "takerDetails": {
+    "description": "Detailed description for the taker"
+  }
+}'

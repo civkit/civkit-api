@@ -1,25 +1,55 @@
+// server.js
 import express from 'express';
+import dotenv from 'dotenv';
+import { authenticateJWT } from './middleware/authMiddleware.js';
+import { generateToken } from './utils/auth.js';
 import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode, handleFiatReceived, settleHoldInvoiceByHash } from './services/invoiceService.js';
-import orderRoutes from './routes/orderRoutes.js'; // Ensure this import is correct
+import { registerUser, authenticateUser } from './services/userService.js';
+import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payouts.js';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Route for handling hold invoice creation
-app.post('/api/holdinvoice', async (req, res) => {
+// User Registration
+app.post('/api/register', async (req, res) => {
   try {
-    const result = await postHoldinvoice(req.body.amount_msat, req.body.label, req.body.description);
+    const { username, password } = req.body;
+    const user = await registerUser(username, password);
+    res.status(201).json({ message: 'User registered successfully', user });
+  } catch (error) {
+    res.status(500).json({ message: 'Registration failed', error: error.message });
+  }
+});
+
+// User Login
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await authenticateUser(username, password);
+    const token = generateToken(user);
+    res.json({ token });
+  } catch (error) {
+    res.status(401).json({ message: 'Login failed', error: error.message });
+  }
+});
+
+// Protected Routes
+app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
+  try {
+    const { amount_msat, label, description } = req.body;
+    const result = await postHoldinvoice(amount_msat, label, description);
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Route for handling hold invoice lookup
-app.post('/api/holdinvoicelookup', async (req, res) => {
+app.post('/api/holdinvoicelookup', authenticateJWT, async (req, res) => {
   try {
     const result = await holdInvoiceLookup(req.body.payment_hash);
     res.json(result);
@@ -28,14 +58,11 @@ app.post('/api/holdinvoicelookup', async (req, res) => {
   }
 });
 
-// Route for handling order creation
-app.use('/api/order', orderRoutes); // Make sure you use app.use here to properly mount the route
+app.use('/api/order', authenticateJWT, orderRoutes);
+app.use('/api/payouts', authenticateJWT, payoutsRoutes);
+app.use('/api/orders', authenticateJWT, orderRoutes);
 
-app.use('/api/payouts', payoutsRoutes);
-app.use('/api/orders', orderRoutes);
-
-
-app.post('/api/sync-invoices', async (req, res) => {
+app.post('/api/sync-invoices', authenticateJWT, async (req, res) => {
   try {
     await syncInvoicesWithNode();
     res.status(200).json({ message: 'Invoices synchronized successfully' });
@@ -45,8 +72,7 @@ app.post('/api/sync-invoices', async (req, res) => {
   }
 });
 
-
-app.get('/api/sync-payouts', async (req, res) => {
+app.get('/api/sync-payouts', authenticateJWT, async (req, res) => {
   try {
     await syncPayoutsWithNode();
     res.status(200).json({ message: 'Payouts synchronized successfully' });
@@ -55,11 +81,9 @@ app.get('/api/sync-payouts', async (req, res) => {
   }
 });
 
-// Function to handle 'fiat received'
-app.post('/api/fiat-received', async (req, res) => {
+app.post('/api/fiat-received', authenticateJWT, async (req, res) => {
   try {
     const { order_id } = req.body;
-    // Assuming you have a function called handleFiatReceived in your invoice service
     await handleFiatReceived(order_id);
     res.status(200).json({ message: 'Fiat received processed successfully' });
   } catch (error) {
@@ -68,15 +92,12 @@ app.post('/api/fiat-received', async (req, res) => {
   }
 });
 
-
-// Function to handle 'settle hold invoice' by payment hash
-app.post('/api/settle-holdinvoice', async (req, res) => {
+app.post('/api/settle-holdinvoice', authenticateJWT, async (req, res) => {
   try {
     const { payment_hash } = req.body;
     const result = await settleHoldInvoiceByHash(payment_hash);
     res.status(200).json({ message: 'Hold invoice settled successfully', result });
   } catch (error) {
-    console.error('Error settling hold invoice:', error);
     res.status(500).json({ message: 'Error settling hold invoice', error: error.message });
   }
 });
