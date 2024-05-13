@@ -112,7 +112,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         "currency": "USD",
         "payment_method": "Credit Card",
         "status": "Pending",
-        "type": 1
+        "type": 1 //sell order
       }'
       ```
     
@@ -140,7 +140,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/payouts/submit -H "Content-Type: application/json" \
-      -H "Authorization: Bearer <maker_token>" \
+      -H "Authorization: Bearer <taker_token>" \
       -d '{
         "order_id": 14,
         "ln_invoice": "lnbc500n1pnzk6tqsp5xpd3ygj43dm6wh0tnk8d64mkavcmxay5ly8tnyc3dtmqlgkqedtqp..."
@@ -179,4 +179,3 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
 This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.
 
 
-This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.
