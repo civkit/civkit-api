@@ -111,7 +111,8 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         "amount_msat": 50000,
         "currency": "USD",
         "payment_method": "Credit Card",
-        "status": "Pending"
+        "status": "Pending",
+        "type": 1
       }'
       ```
     
