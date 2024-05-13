@@ -100,25 +100,30 @@ async function generateTakerInvoice(orderId, takerDetails) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-    
-        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1`;
+        
+        // Retrieve the original amount from invoices table
+        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1 AND invoice_type = 'full'`;
         const orderDetailsResult = await client.query(orderDetailsQuery, [orderId]);
 
         if (orderDetailsResult.rows.length === 0) {
-            throw new Error('No maker invoice found for this order ID');
+            throw new Error('No full amount invoice found for this order ID');
         }
 
         const orderDetails = orderDetailsResult.rows[0];
         const amountPercentage = 0.05; // 5% of the amount_msat
         const invoiceAmountMsat = Math.round(orderDetails.amount_msat * amountPercentage);
-        const invoiceData = await generateBolt11Invoice(invoiceAmountMsat, `Order ${orderId} for Taker`, takerDetails.description);
-  
+        
+        // Generate hold invoice
+        const holdInvoiceData = await postHoldinvoice(invoiceAmountMsat, `Order ${orderId} for Taker`, takerDetails.description);
+        
+        // Insert hold invoice into the database
         const insertInvoiceText = `
             INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type)
-            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'taker')
+            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'hold')
             RETURNING *;
         `;
-        const result = await client.query(insertInvoiceText, [orderId, invoiceData.bolt11, invoiceAmountMsat, invoiceData.description, invoiceData.payment_hash]);
+        const result = await client.query(insertInvoiceText, [orderId, holdInvoiceData.bolt11, invoiceAmountMsat, holdInvoiceData.description, holdInvoiceData.payment_hash]);
+        
         await client.query('COMMIT');
         return result.rows[0];
     } catch (error) {
@@ -128,6 +133,7 @@ async function generateTakerInvoice(orderId, takerDetails) {
         client.release();
     }
 }
+
 
 // Monitoring and updating the status
 async function checkAndUpdateOrderStatus(orderId, payment_hash) {
