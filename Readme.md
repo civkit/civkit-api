@@ -163,14 +163,14 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         "payment_hash": "049c7e172dfa8fcee31669795ed31178f23a964a9251f6fe2ac6c7f7c98010be"
       }'
       ```
-    - **COnfirm Fiat received**
+    - **Confirm Fiat received**
     
-      ```
+      ```bash
     curl -X POST http://localhost:3000/api/fiat-received \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer <maker token> \
     -d '{"order_id": 81}'
-    {"message":"Fiat received processed successfully"}
+    {"message":"Fiat received processed successfully"}'
       ```
 
       
