@@ -163,5 +163,16 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         "payment_hash": "049c7e172dfa8fcee31669795ed31178f23a964a9251f6fe2ac6c7f7c98010be"
       }'
       ```
+    - **COnfirm Fiat received**
+    
+      ```
+    curl -X POST http://localhost:3000/api/fiat-received \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer <maker token> \
+    -d '{"order_id": 81}'
+    {"message":"Fiat received processed successfully"}
+      ```
+
+      
 
 This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.
