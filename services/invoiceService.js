@@ -2,7 +2,7 @@
 import fetch from 'node-fetch';
 import https from 'https';
 import { config } from 'dotenv';
-import pkg from 'pg';  // Corrected import for CommonJS module
+import pkg from 'pg';
 import { retrievePayoutInvoice } from './payoutService.js';
 import { createPayout } from './payoutService.js';
 //import { updatePayoutStatus } from './orderService.js';
@@ -52,6 +52,7 @@ async function postHoldinvoice(totalAmountMsat, label, description) {
     throw error;
   }
 }
+
 async function holdInvoiceLookup({ state, payment_hash }) {
   try {
     const bodyData = state ? { state } : { payment_hash };
@@ -71,18 +72,16 @@ async function holdInvoiceLookup({ state, payment_hash }) {
     }
 
     const invoiceData = await response.json();
-    // Assuming the response is an object with an invoices key
-    return invoiceData.invoices || []; // Ensure it always returns an array
+    return invoiceData.invoices || [];
   } catch (error) {
     console.error('Failed to lookup invoices:', error);
     throw error;
   }
 }
 
-
 async function syncInvoicesWithNode() {
   const agent = new https.Agent({
-    rejectUnauthorized: false  // Reminder: Ensure to handle SSL/TLS certificate verification correctly in production.
+    rejectUnauthorized: false
   });
 
   const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
@@ -102,7 +101,7 @@ async function syncInvoicesWithNode() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const orderUpdates = {}; // Track updated statuses for orders
+    const orderUpdates = {};
 
     for (const invoice of invoices) {
       const res = await client.query(
@@ -118,7 +117,6 @@ async function syncInvoicesWithNode() {
           );
         }
 
-        // Collect order ids with potentially completed payments
         if (!orderUpdates[order_id]) {
           orderUpdates[order_id] = [];
         }
@@ -126,7 +124,6 @@ async function syncInvoicesWithNode() {
       }
     }
 
-    // Check if all invoices under an order are marked as 'paid'
     for (const order_id in orderUpdates) {
       if (orderUpdates[order_id].every(status => status === 'paid')) {
         await client.query(
@@ -149,7 +146,7 @@ async function syncInvoicesWithNode() {
 
 async function syncPayoutsWithNode() {
   const agent = new https.Agent({
-    rejectUnauthorized: false // DANGER: Only for development, remove in production!
+    rejectUnauthorized: false
   });
 
   const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
@@ -171,7 +168,7 @@ async function syncPayoutsWithNode() {
   try {
     await client.query('BEGIN');
     for (const invoice of invoices) {
-      const ln_invoice = invoice.bolt11; // This assumes 'bolt11' is the field name for the invoice in the response
+      const ln_invoice = invoice.bolt11;
       const res = await client.query(
         'SELECT status FROM payouts WHERE ln_invoice = $1',
         [ln_invoice]
@@ -195,18 +192,17 @@ async function syncPayoutsWithNode() {
   }
 }
 
-
 async function generateBolt11Invoice(amount_msat, label, description, type, premium) {
   const data = {
     amount_msat: parseInt(amount_msat),
     label,
     description,
     cltv: 770,
-    type,    // Assuming the API supports this directly or needs additional handling
-    premium  // Same as above
+    type,
+    premium
   };
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, { // Changed to regular invoice endpoint
       method: 'POST',
       headers: {
         'Accept': 'application/json',
@@ -233,142 +229,145 @@ async function generateBolt11Invoice(amount_msat, label, description, type, prem
   }
 }
 
-
 async function postFullAmountInvoice(amount_msat, label, description, orderId, orderType) {
   if (orderType !== 1) {
-      // If the order type is not 1, do not create a full amount invoice
-      console.log(`Full amount invoice not required for order type ${orderType}.`);
-      return null;
+    console.log(`Full amount invoice not required for order type ${orderType}.`);
+    return null;
   }
 
   const data = {
-      amount_msat,  // Use the full amount
-      label,
-      description,
-      cltv: 770,
+    amount_msat,
+    label,
+    description,
+    cltv: 770,
   };
 
   try {
-      const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
-          method: 'POST',
-          headers: {
-              'Accept': 'application/json',
-              'Rune': MY_RUNE,
-              'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(data),
-          agent: new https.Agent({ rejectUnauthorized: false })
-      });
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, { // Changed to regular invoice endpoint
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+      agent: new https.Agent({ rejectUnauthorized: false })
+    });
 
-      if (!response.ok) {
-          throw new Error(`HTTP Error: ${response.status} while posting full amount invoice`);
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status} while posting full amount invoice`);
+    }
 
-      const invoiceData = await response.json();
-      console.log(`Full amount invoice created for order ${orderId}`);
-      return invoiceData;
+    const invoiceData = await response.json();
+    console.log(`Full amount invoice created for order ${orderId}`);
+    return invoiceData;
   } catch (error) {
-      console.error('Failed to post full amount invoice:', error);
-      throw error;
+    console.error('Failed to post full amount invoice:', error);
+    throw error;
   }
 }
 
 async function handleFiatReceived(orderId) {
   const client = await pool.connect();
   try {
-      await client.query('BEGIN'); // Start the transaction
+    await client.query('BEGIN');
 
-      // Update payout status to 'fiat_received'
-      const updateResult = await updatePayoutStatus(client, orderId, 'fiat_received');
-      if (updateResult.rowCount === 0) {
-          throw new Error('No corresponding payout found or update failed');
-      }
+    const updateResult = await updatePayoutStatus(client, orderId, 'fiat_received');
+    if (updateResult.rowCount === 0) {
+      throw new Error('No corresponding payout found or update failed');
+    }
 
-      // Retrieve the payout invoice details (LN invoice being paid from)
-      const payoutDetails = await client.query(
-          `SELECT ln_invoice FROM payouts WHERE order_id = $1`,
-          [orderId]
-      );
-      if (payoutDetails.rows.length === 0) {
-          throw new Error('No payout details found for this order');
-      }
-      const payoutInvoice = payoutDetails.rows[0].ln_invoice;
+    const payoutDetails = await client.query(
+      `SELECT ln_invoice FROM payouts WHERE order_id = $1`,
+      [orderId]
+    );
+    if (payoutDetails.rows.length === 0) {
+      throw new Error('No payout details found for this order');
+    }
+    const payoutInvoice = payoutDetails.rows[0].ln_invoice;
 
-      // Retrieve the originating FULL invoice details (LN invoice marked as FULL)
-      const fullInvoiceDetails = await client.query(
-          `SELECT bolt11 FROM invoices WHERE order_id = $1 AND invoice_type = 'full'`,
-          [orderId]
-      );
-      if (fullInvoiceDetails.rows.length === 0) {
-          throw new Error('No FULL invoice details found for this order');
-      }
-      const fullInvoice = fullInvoiceDetails.rows[0].bolt11;
+    console.log("Payout LN Invoice:", payoutInvoice);
 
-      // Log the originating FULL invoice and the payout invoice details
-      console.log("Originating FULL LN Invoice:", fullInvoice);
-      console.log("Payout LN Invoice:", payoutInvoice);
+    const paymentResult = await payInvoice(payoutInvoice);
+    if (!paymentResult || paymentResult.status !== 'complete') {
+      throw new Error('Failed to pay payout invoice');
+    }
 
-      // Attempt to settle the hold invoice (using the payout invoice)
-      const settlementResult = await settleHoldInvoice(payoutInvoice);
-      if (!settlementResult || settlementResult.status !== 'succeeded') {
-          throw new Error('Failed to settle hold invoice');
-      }
+    console.log("Successfully paid payout invoice:", payoutInvoice);
 
-      // Log the successful settlement
-      console.log("Successfully settled invoice for LN Invoice:", payoutInvoice);
-
-      await client.query('COMMIT'); // Commit the transaction if everything is successful
-      console.log("Fiat received and invoice settled successfully.");
+    await client.query('COMMIT');
+    console.log("Fiat received and payout processed successfully.");
   } catch (error) {
-      await client.query('ROLLBACK'); // Rollback the transaction on error
-      console.error("Error processing fiat received:", error);
-      throw error;
+    await client.query('ROLLBACK');
+    console.error("Error processing fiat received:", error);
+    throw error;
   } finally {
-      client.release(); // Release the database connection
+    client.release();
+  }
+}
+
+async function payInvoice(lnInvoice) {
+  try {
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/pay`, { // Changed to pay endpoint
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ bolt11: lnInvoice }),
+      agent: new https.Agent({ rejectUnauthorized: false })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to pay invoice:', error);
+    throw error;
   }
 }
 
 async function updatePayoutStatus(client, orderId, status) {
-    try {
-        // Update the status of the payout in the payouts table
-        const result = await client.query(
-            'UPDATE payouts SET status = $1 WHERE order_id = $2 RETURNING *',
-            [status, orderId]
-        );
+  try {
+    const result = await client.query(
+      'UPDATE payouts SET status = $1 WHERE order_id = $2 RETURNING *',
+      [status, orderId]
+    );
 
-        // Check if the payout was updated successfully
-        if (result.rows.length === 0) {
-            throw new Error('Failed to update payout status');
-        }
-
-        return result;
-    } catch (error) {
-        throw error;
+    if (result.rows.length === 0) {
+      throw new Error('Failed to update payout status');
     }
-}
 
+    return result;
+  } catch (error) {
+    throw error;
+  }
+}
 
 async function settleHoldInvoice(lnInvoice) {
   try {
-      const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
-          method: 'POST',
-          headers: {
-              'Accept': 'application/json',
-              'Rune': MY_RUNE,
-              'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ payment_hash: lnInvoice }),
-          agent: new https.Agent({ rejectUnauthorized: false }) // Reminder to handle SSL in production
-      });
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payment_hash: lnInvoice }),
+      agent: new https.Agent({ rejectUnauthorized: false })
+    });
 
-      if (!response.ok) {
-          throw new Error(`HTTP Error: ${response.status}`);
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
 
-      return await response.json(); // Returns a confirmation of the invoice settlement
+    return await response.json();
   } catch (error) {
-      console.error('Failed to settle invoice:', error);
-      throw error;
+    console.error('Failed to settle invoice:', error);
+    throw error;
   }
 }
 
@@ -383,7 +382,6 @@ async function generateAndSettleHoldInvoice(amount_msat, label, description, typ
   };
 
   try {
-    // Generate the hold invoice
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
       method: 'POST',
       headers: {
@@ -405,11 +403,9 @@ async function generateAndSettleHoldInvoice(amount_msat, label, description, typ
       throw new Error('bolt11 is missing in the response');
     }
 
-    // Extract payment_hash from the generated invoice
     const { payment_hash } = invoiceData;
     console.log('Generated hold invoice:', invoiceData);
 
-    // Settle the hold invoice
     const settleResponse = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
       method: 'POST',
       headers: {
@@ -436,22 +432,20 @@ async function generateAndSettleHoldInvoice(amount_msat, label, description, typ
   }
 }
 
-
-
 async function checkAndProcessPendingPayouts() {
   const client = await pool.connect();
   try {
-      const result = await client.query(
-          "SELECT order_id FROM payouts WHERE status = 'fiat_received'"
-      );
+    const result = await client.query(
+      "SELECT order_id FROM payouts WHERE status = 'fiat_received'"
+    );
 
-      for (const row of result.rows) {
-          await handleFiatReceived(row.order_id);
-      }
+    for (const row of result.rows) {
+      await handleFiatReceived(row.order_id);
+    }
   } catch (error) {
-      console.error('Error processing pending payouts:', error);
+    console.error('Error processing pending payouts:', error);
   } finally {
-      client.release();
+    client.release();
   }
 }
 
@@ -460,7 +454,7 @@ const settleHoldInvoiceByHash = async (payment_hash) => {
     console.log(`Settling hold invoice with payment_hash: ${payment_hash}`);
 
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
-      method: 'POST', // Ensure the method is POST as per documentation
+      method: 'POST',
       headers: {
         'Accept': 'application/json',
         'Rune': MY_RUNE,
@@ -484,7 +478,6 @@ const settleHoldInvoiceByHash = async (payment_hash) => {
   }
 };
 
-
 export {
   postHoldinvoice,
   holdInvoiceLookup,
@@ -496,5 +489,6 @@ export {
   settleHoldInvoice,
   checkAndProcessPendingPayouts,
   updatePayoutStatus,
-  settleHoldInvoiceByHash
+  settleHoldInvoiceByHash,
+  payInvoice // Export payInvoice
 };
