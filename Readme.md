@@ -163,6 +163,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         "payment_hash": "049c7e172dfa8fcee31669795ed31178f23a964a9251f6fe2ac6c7f7c98010be"
       }'
       ```
+
     - **Confirm Fiat received**
     
       ```bash
