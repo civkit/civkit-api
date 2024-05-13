@@ -69,6 +69,28 @@ Running Test Curl Commands
 Once you've set up the database and tables, you can use curl commands to interact with your API for testing purposes.
 
 Here's an example curl command to create a new order via the API:
+
+
+UPDATE: TOKENS NOW BEING USED
+ 2008  curl -X POST http://localhost:3000/api/register -H "Content-Type: application/json" -d '{
+  "username": "user1",
+  "password": "password1"
+}'
+ 2009  curl -X POST http://localhost:3000/api/login -H "Content-Type: application/json" -d '{
+  "username": "user1",
+  "password": "password1"
+}'
+
+ 2012  curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwidXNlcm5hbWUiOiJ1c2VyMSIsImlhdCI6MTcxNTU4NjE2MSwiZXhwIjoxNzE1NTg5NzYxfQ.UZIu8FuFm8SOOdfEcHwIYprqoocIE3rw8KBynDcAap8" -d '{
+  "customer_id": 2,
+  "order_details": "New Order for Testing",
+  "amount_msat": 50000,
+  "currency": "USD",
+  "payment_method": "Credit Card",
+  "status": "Pending",
+  "type": 1,
+  "premium": 1.5
+}'
 ```
 curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" -d '{
   "customer_id": 1234567,
