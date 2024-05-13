@@ -167,13 +167,14 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     - **Confirm Fiat received**
     
       ```bash
-    curl -X POST http://localhost:3000/api/fiat-received \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer <maker token> \
-    -d '{"order_id": 81}'
-    {"message":"Fiat received processed successfully"}'
+      curl -X POST http://localhost:3000/api/fiat-received \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <maker token>" \
+      -d '{"order_id": 81}'
+      {"message":"Fiat received processed successfully"}'
       ```
 
-      
+This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.
+
 
 This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.
