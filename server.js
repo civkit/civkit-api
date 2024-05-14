@@ -3,7 +3,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { authenticateJWT } from './middleware/authMiddleware.js';
 import { generateToken } from './utils/auth.js';
-import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode, handleFiatReceived, settleHoldInvoiceByHash } from './services/invoiceService.js';
+import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode, handleFiatReceived, settleHoldInvoiceByHash, settleHoldInvoicesByOrderIdService } from './services/invoiceService.js';
 import { registerUser, authenticateUser } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payouts.js';
@@ -92,15 +92,16 @@ app.post('/api/fiat-received', authenticateJWT, async (req, res) => {
   }
 });
 
-app.post('/api/settle-holdinvoice', authenticateJWT, async (req, res) => {
+app.post('/api/settle-holdinvoices-by-order', authenticateJWT, async (req, res) => {
   try {
-    const { payment_hash } = req.body;
-    const result = await settleHoldInvoiceByHash(payment_hash);
-    res.status(200).json({ message: 'Hold invoice settled successfully', result });
+    const { orderId } = req.body;
+    const result = await settleHoldInvoicesByOrderIdService(orderId);
+    res.status(200).json({ message: 'Hold invoices settled successfully', result });
   } catch (error) {
-    res.status(500).json({ message: 'Error settling hold invoice', error: error.message });
+    res.status(500).json({ message: 'Error settling hold invoices', error: error.message });
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

@@ -478,6 +478,49 @@ const settleHoldInvoiceByHash = async (payment_hash) => {
   }
 };
 
+const settleHoldInvoicesByOrderIdService = async (orderId) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Fetch all hold invoices for the order
+    const invoicesResult = await client.query(
+      'SELECT payment_hash FROM invoices WHERE order_id = $1 AND invoice_type = $2 AND status = $3',
+      [orderId, 'hold', 'unpaid']
+    );
+
+    const settlePromises = invoicesResult.rows.map(async (invoice) => {
+      const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Rune': MY_RUNE,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ payment_hash: invoice.payment_hash }),
+        agent: new https.Agent({ rejectUnauthorized: false })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to settle invoice with payment_hash: ${invoice.payment_hash}`);
+      }
+
+      const settleData = await response.json();
+      return settleData;
+    });
+
+    const settledInvoices = await Promise.all(settlePromises);
+    await client.query('COMMIT');
+    return settledInvoices;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+
 export {
   postHoldinvoice,
   holdInvoiceLookup,
@@ -490,5 +533,6 @@ export {
   checkAndProcessPendingPayouts,
   updatePayoutStatus,
   settleHoldInvoiceByHash,
-  payInvoice // Export payInvoice
+  payInvoice, // Export payInvoice
+  settleHoldInvoicesByOrderIdService
 };
