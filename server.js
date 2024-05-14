@@ -3,10 +3,19 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { authenticateJWT } from './middleware/authMiddleware.js';
 import { generateToken } from './utils/auth.js';
-import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode, handleFiatReceived, settleHoldInvoiceByHash, settleHoldInvoicesByOrderIdService } from './services/invoiceService.js';
+import {
+  postHoldinvoice,
+  holdInvoiceLookup,
+  syncInvoicesWithNode,
+  syncPayoutsWithNode,
+  handleFiatReceived,
+  settleHoldInvoiceByHash,
+  settleHoldInvoicesByOrderIdService
+} from './services/invoiceService.js';
 import { registerUser, authenticateUser } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payouts.js';
+import { initializeNDK } from './config/ndkSetup.js';  // Adjusted import
 
 dotenv.config();
 
@@ -102,7 +111,10 @@ app.post('/api/settle-holdinvoices-by-order', authenticateJWT, async (req, res) 
   }
 });
 
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// Initialize NDK and create identity
+initializeNDK().then(() => {
+  // Start the Express server
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 });
