@@ -104,7 +104,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" \
-      -H "Authorization: Bearer <maker_token>" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTU2NzgxMjMsImV4cCI6MTcxNTY4MTcyM30.9drthez6_KaiHnJUuwYOYTenzUxvOOvsyNhuAquntC4" \
       -d '{
         "customer_id": 1234567,
         "order_details": "New Order for Testing",
