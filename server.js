@@ -10,7 +10,8 @@ import {
   syncPayoutsWithNode,
   handleFiatReceived,
   settleHoldInvoiceByHash,
-  settleHoldInvoicesByOrderIdService
+  settleHoldInvoicesByOrderIdService,
+  checkAndUpdateAcceptedInvoices
 } from './services/invoiceService.js';
 import { registerUser, authenticateUser } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
@@ -118,3 +119,16 @@ initializeNDK().then(() => {
     console.log(`Server running on port ${PORT}`);
   });
 });
+
+// New endpoint to check and update accepted invoices
+app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    await checkAndUpdateAcceptedInvoices(orderId);
+    res.status(200).json({ message: 'Invoices checked and updated successfully' });
+  } catch (error) {
+    console.error('Failed to check and update invoices:', error);
+    res.status(500).json({ message: 'Failed to check and update invoices', error: error.message });
+  }
+});
+

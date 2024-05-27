@@ -79,70 +79,70 @@ async function holdInvoiceLookup({ state, payment_hash }) {
   }
 }
 
-async function syncInvoicesWithNode() {
-  const agent = new https.Agent({
-    rejectUnauthorized: false
-  });
+// async function syncInvoicesWithNode() {
+//   const agent = new https.Agent({
+//     rejectUnauthorized: false
+//   });
 
-  const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Rune': MY_RUNE,
-    },
-    agent
-  });
+//   const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
+//     method: 'POST',
+//     headers: {
+//       'Accept': 'application/json',
+//       'Rune': MY_RUNE,
+//     },
+//     agent
+//   });
 
-  if (!response.ok) {
-    throw new Error(`HTTP Error: ${response.status}`);
-  }
-  const { invoices } = await response.json();
+//   if (!response.ok) {
+//     throw new Error(`HTTP Error: ${response.status}`);
+//   }
+//   const { invoices } = await response.json();
 
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const orderUpdates = {};
+//   const client = await pool.connect();
+//   try {
+//     await client.query('BEGIN');
+//     const orderUpdates = {};
 
-    for (const invoice of invoices) {
-      const res = await client.query(
-        'SELECT status, order_id FROM invoices WHERE payment_hash = $1',
-        [invoice.payment_hash]
-      );
-      if (res.rows.length > 0) {
-        const { status, order_id } = res.rows[0];
-        if (status !== invoice.status) {
-          await client.query(
-            'UPDATE invoices SET status = $1 WHERE payment_hash = $2',
-            [invoice.status, invoice.payment_hash]
-          );
-        }
+//     for (const invoice of invoices) {
+//       const res = await client.query(
+//         'SELECT status, order_id FROM invoices WHERE payment_hash = $1',
+//         [invoice.payment_hash]
+//       );
+//       if (res.rows.length > 0) {
+//         const { status, order_id } = res.rows[0];
+//         if (status !== invoice.status) {
+//           await client.query(
+//             'UPDATE invoices SET status = $1 WHERE payment_hash = $2',
+//             [invoice.status, invoice.payment_hash]
+//           );
+//         }
 
-        if (!orderUpdates[order_id]) {
-          orderUpdates[order_id] = [];
-        }
-        orderUpdates[order_id].push(invoice.status);
-      }
-    }
+//         if (!orderUpdates[order_id]) {
+//           orderUpdates[order_id] = [];
+//         }
+//         orderUpdates[order_id].push(invoice.status);
+//       }
+//     }
 
-    for (const order_id in orderUpdates) {
-      if (orderUpdates[order_id].every(status => status === 'paid')) {
-        await client.query(
-          'UPDATE orders SET status = $1 WHERE order_id = $2',
-          ['bonds_locked', order_id]
-        );
-        console.log(`Order ${order_id} updated to bonds_locked`);
-      }
-    }
+//     for (const order_id in orderUpdates) {
+//       if (orderUpdates[order_id].every(status => status === 'paid')) {
+//         await client.query(
+//           'UPDATE orders SET status = $1 WHERE order_id = $2',
+//           ['bonds_locked', order_id]
+//         );
+//         console.log(`Order ${order_id} updated to bonds_locked`);
+//       }
+//     }
 
-    await client.query('COMMIT');
-  } catch (error) {
-    console.error('Error while syncing invoices:', error);
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
+//     await client.query('COMMIT');
+//   } catch (error) {
+//     console.error('Error while syncing invoices:', error);
+//     await client.query('ROLLBACK');
+//     throw error;
+//   } finally {
+//     client.release();
+//   }
+// }
 
 async function syncPayoutsWithNode() {
   const agent = new https.Agent({
@@ -520,12 +520,75 @@ const settleHoldInvoicesByOrderIdService = async (orderId) => {
   }
 };
 
+async function checkAndUpdateAcceptedInvoices(orderId) {
+  const agent = new https.Agent({ rejectUnauthorized: false });
+
+  try {
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+      },
+      agent
+    });
+
+    if (!response.ok) {
+      console.error(`HTTP Error: ${response.status} while fetching invoices`);
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    const { invoices } = await response.json();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const invoice of invoices) {
+        if (invoice.status === 'accepted') {
+          const res = await client.query(
+            'SELECT status FROM invoices WHERE payment_hash = $1 AND order_id = $2',
+            [invoice.payment_hash, orderId]
+          );
+
+          if (res.rows.length > 0) {
+            const { status } = res.rows[0];
+            if (status !== 'accepted') {
+              await client.query(
+                'UPDATE invoices SET status = $1 WHERE payment_hash = $2 AND order_id = $3',
+                ['accepted', invoice.payment_hash, orderId]
+              );
+              console.log(`Invoice with payment_hash ${invoice.payment_hash} updated to 'accepted'`);
+            } else {
+              console.log(`Invoice with payment_hash ${invoice.payment_hash} already marked as 'accepted'`);
+            }
+          } else {
+            console.log(`Invoice with payment_hash ${invoice.payment_hash} not found in database for orderId ${orderId}`);
+          }
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (dbError) {
+      await client.query('ROLLBACK');
+      console.error('Database transaction error:', dbError);
+      throw dbError;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error checking and updating invoices:', error);
+    throw error;
+  }
+}
+
+
+
 
 export {
   postHoldinvoice,
   holdInvoiceLookup,
   generateBolt11Invoice,
-  syncInvoicesWithNode,
+  //syncInvoicesWithNode,
   syncPayoutsWithNode,
   postFullAmountInvoice,
   handleFiatReceived,
@@ -534,5 +597,6 @@ export {
   updatePayoutStatus,
   settleHoldInvoiceByHash,
   payInvoice, // Export payInvoice
-  settleHoldInvoicesByOrderIdService
+  settleHoldInvoicesByOrderIdService,
+  checkAndUpdateAcceptedInvoices
 };
