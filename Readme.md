@@ -128,7 +128,14 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         }
       }'
       ```
-
+      curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTU2OTA5OTYsImV4cCI6MTcxNTY5NDU5Nn0.NZg3knpnNxhBENFEGvQrTBqx7rRaSUwsdExAZMsBHU8" \
+      -d '{
+        "orderId": 93,
+        "takerDetails": {
+          "description": "Detailed description for the taker"
+        }
+      }'
     - **Sync invoices table to Lightning node:**
     
       ```bash
@@ -140,10 +147,10 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/payouts/submit -H "Content-Type: application/json" \
-      -H "Authorization: Bearer <taker_token>" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTU2OTA5OTYsImV4cCI6MTcxNTY5NDU5Nn0.NZg3knpnNxhBENFEGvQrTBqx7rRaSUwsdExAZMsBHU8" \
       -d '{
-        "order_id": 14,
-        "ln_invoice": "lnbc500n1pnzk6tqsp5xpd3ygj43dm6wh0tnk8d64mkavcmxay5ly8tnyc3dtmqlgkqedtqp..."
+        "order_id": 93,
+        "ln_invoice": "lntb500n1pnyxhj6sp5wa0qddh6m7ngxc26kc6jwt9usdxgsu4wren9nx8dxe6qjxjgm0dqpp5yceze5tt2g77g4yuc030d3407mr5rkvzmgk2eqhvv5tqp3cytl0sdq4daexgetj8yej6arpddjhyxqyjw5qcqp2rzjqfnfnd4vynmcfz6ulcc2fvpp7et3dw9wdqg3sxnl2ljn89vvml8kk2hjdqqq0dqqqqqqqqqpqqqqqzsqqcrzjqgtm5k28l67ntm5jffy8kzv794mfkj3ak44e4pfzn9xyc5fjken6c2hjdqqq0vcqqqqqqqqpqqqqqzsqqcrzjqgtm5k28l67ntm5jffy8kzv794mfkj3ak44e4pfzn9xyc5fjken6c2h5f5qqtwqqqqqqqqqpqqqqqzsqqc9qxpqysgqsfagrq3krtymttwrnjkdwm3yvhpjq2590c4nt3d8r0nwzzxxt058y60g9lp0gztm6lrdvp5jcwnfy5zzhr23lkwh5ua4tawzrhz0hacpyhvw8f"
       }'
       ```
 
@@ -171,8 +178,8 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       ```bash
       curl -X POST http://localhost:3000/api/fiat-received \
       -H "Content-Type: application/json" \
-      -H "Authorization: Bearer <maker token>" \
-      -d '{"order_id": 81}'
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTU2ODkzODksImV4cCI6MTcxNTY5Mjk4OX0.Cus4LOmnXY4S_CTMiL3eDn-J1sRbG1Ioxv2HLkLo4sI" \
+      -d '{"order_id": 93}'
       {"message":"Fiat received processed successfully"}'
       ```
 
