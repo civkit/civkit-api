@@ -1,5 +1,7 @@
-import { postHoldinvoice, generateBolt11Invoice } from './invoiceService.js'; // Ensure this import matches your project's structure
+import { postHoldinvoice, generateBolt11Invoice, postFullAmountInvoice,  handleFiatReceived } from './invoiceService.js'; // Ensure this import matches your project's structure
 import { pool } from '../config/db.js'; // Updated to use named imports
+import { config } from 'dotenv';
+config(); // Make sure this is called before using process.env variables
 
 /**
  * Add a new order and generate an invoice.
@@ -14,40 +16,53 @@ async function addOrderAndGenerateInvoice(orderData) {
         currency,
         payment_method,
         status,
-        type,           // Ensure type is included in orderData object
-        premium         // Assuming premium might also need to be included
+        type,
+        premium
     } = orderData;
 
     const client = await pool.connect();
-
     try {
         await client.query('BEGIN');
 
-        // Include type and premium in the INSERT statement
+        // Insert the order into the database
         const orderInsertText = `
-          INSERT INTO orders (customer_id, order_details, amount_msat, currency, payment_method, status, type, premium, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-          RETURNING *;
+            INSERT INTO orders (customer_id, order_details, amount_msat, currency, payment_method, status, type, premium, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            RETURNING *;
         `;
         const orderResult = await client.query(orderInsertText, [customer_id, order_details, amount_msat, currency, payment_method, status, type, premium]);
         const order = orderResult.rows[0];
 
-        // Assuming postHoldinvoice function is capable of handling the order correctly
-        const invoiceData = await postHoldinvoice(amount_msat, `Order ${order.order_id}`, order_details);
+        // Post the hold invoice for 5%
+        const holdInvoiceData = await postHoldinvoice(amount_msat, `Hold Invoice for Order ${order.order_id}`, order_details);
 
-        // Insert the generated invoice data into the invoices table
-        const invoiceInsertText = `
-            INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at)
-            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY')
+        // Save hold invoice data to the database
+        const holdInvoiceInsertText = `
+            INSERT INTO invoices (order_id, bolt11, amount_msat, status, description, payment_hash, created_at, expires_at, invoice_type)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW() + INTERVAL '1 DAY', 'hold')
             RETURNING *;
         `;
-        const invoiceResult = await client.query(invoiceInsertText, [order.order_id, invoiceData.bolt11, amount_msat, order_details, invoiceData.payment_hash]);
-        const invoice = invoiceResult.rows[0];
+        await client.query(holdInvoiceInsertText, [order.order_id, holdInvoiceData.bolt11, amount_msat, holdInvoiceData.status, order_details, holdInvoiceData.payment_hash]);
+
+        // Post the full amount invoice for type 1
+        let fullInvoiceData = null;
+        if (type === 1) {
+            fullInvoiceData = await postFullAmountInvoice(amount_msat, `Full Amount Invoice for Order ${order.order_id}`, order_details, order.order_id, type);
+            
+            // Save full amount invoice data to the database
+            const fullInvoiceInsertText = `
+                INSERT INTO invoices (order_id, bolt11, amount_msat, status, description, payment_hash, created_at, expires_at, invoice_type)
+                VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW() + INTERVAL '1 DAY', 'full')
+                RETURNING *;
+            `;
+            await client.query(fullInvoiceInsertText, [order.order_id, fullInvoiceData.bolt11, amount_msat, fullInvoiceData.status, order_details, fullInvoiceData.payment_hash]);
+        }
 
         await client.query('COMMIT');
-        return { order, invoice };
+        return { order, holdInvoice: holdInvoiceData, fullAmountInvoice: fullInvoiceData };
     } catch (error) {
         await client.query('ROLLBACK');
+        console.error('Transaction failed:', error);
         throw error;
     } finally {
         client.release();
@@ -85,23 +100,30 @@ async function generateTakerInvoice(orderId, takerDetails) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-    
-        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1 AND invoice_type = 'maker'`;
+        
+        // Retrieve the original amount from invoices table
+        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1 AND invoice_type = 'full'`;
         const orderDetailsResult = await client.query(orderDetailsQuery, [orderId]);
 
         if (orderDetailsResult.rows.length === 0) {
-            throw new Error('No maker invoice found for this order ID');
+            throw new Error('No full amount invoice found for this order ID');
         }
 
         const orderDetails = orderDetailsResult.rows[0];
-        const invoiceData = await generateBolt11Invoice(orderDetails.amount_msat, `Order ${orderId} for Taker`, takerDetails.description);
-  
+        const amountPercentage = 0.05; // 5% of the amount_msat
+        const invoiceAmountMsat = Math.round(orderDetails.amount_msat * amountPercentage);
+        
+        // Generate hold invoice
+        const holdInvoiceData = await postHoldinvoice(invoiceAmountMsat, `Order ${orderId} for Taker`, takerDetails.description);
+        
+        // Insert hold invoice into the database
         const insertInvoiceText = `
             INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type)
-            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'taker')
+            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'hold')
             RETURNING *;
         `;
-        const result = await client.query(insertInvoiceText, [orderId, invoiceData.bolt11, orderDetails.amount_msat, invoiceData.description, invoiceData.payment_hash]);
+        const result = await client.query(insertInvoiceText, [orderId, holdInvoiceData.bolt11, invoiceAmountMsat, holdInvoiceData.description, holdInvoiceData.payment_hash]);
+        
         await client.query('COMMIT');
         return result.rows[0];
     } catch (error) {
@@ -111,7 +133,7 @@ async function generateTakerInvoice(orderId, takerDetails) {
         client.release();
     }
 }
-  
+
 
 // Monitoring and updating the status
 async function checkAndUpdateOrderStatus(orderId, payment_hash) {
@@ -140,4 +162,33 @@ async function checkAndUpdateOrderStatus(orderId, payment_hash) {
     }
 }
 
-export { addOrderAndGenerateInvoice, processTakeOrder, generateTakerInvoice, checkAndUpdateOrderStatus };
+async function handleFiatReceivedAndUpdateOrder(orderId) {
+    try {
+        await handleFiatReceived(orderId);
+        console.log("Order status updated to indicate fiat received.");
+    } catch (error) {
+        console.error("Error updating order status:", error);
+        throw error;
+    }
+}
+
+async function updatePayoutStatus(orderId, status) {
+    const db = await import('../config/db.js'); // Import the database module dynamically
+
+    try {
+        // Update the status of the payout in the payouts table
+        const result = await db.query('UPDATE payouts SET status = $1 WHERE order_id = $2 RETURNING *', [status, orderId]);
+
+        // Check if the payout was updated successfully
+        if (result.rows.length === 0) {
+            throw new Error('Failed to update payout status');
+        }
+
+        return result.rows[0];
+    } catch (error) {
+        throw error;
+    }
+}
+
+
+export { addOrderAndGenerateInvoice, processTakeOrder, generateTakerInvoice, checkAndUpdateOrderStatus, handleFiatReceivedAndUpdateOrder , updatePayoutStatus};
