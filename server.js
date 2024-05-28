@@ -144,4 +144,3 @@ app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => 
     res.status(500).json({ message: 'Failed to check invoices and create chatroom', error: error.message });
   }
 });
-

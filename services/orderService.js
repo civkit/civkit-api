@@ -96,11 +96,11 @@ async function processTakeOrder(orderId, holdInvoice) {
     }
 }
 
-async function generateTakerInvoice(orderId, takerDetails) {
+async function generateTakerInvoice(orderId, takerDetails, customer_id) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        
+
         // Retrieve the original amount from invoices table
         const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1 AND invoice_type = 'full'`;
         const orderDetailsResult = await client.query(orderDetailsQuery, [orderId]);
@@ -112,10 +112,10 @@ async function generateTakerInvoice(orderId, takerDetails) {
         const orderDetails = orderDetailsResult.rows[0];
         const amountPercentage = 0.05; // 5% of the amount_msat
         const invoiceAmountMsat = Math.round(orderDetails.amount_msat * amountPercentage);
-        
+
         // Generate hold invoice
         const holdInvoiceData = await postHoldinvoice(invoiceAmountMsat, `Order ${orderId} for Taker`, takerDetails.description);
-        
+
         // Insert hold invoice into the database
         const insertInvoiceText = `
             INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type)
@@ -123,7 +123,15 @@ async function generateTakerInvoice(orderId, takerDetails) {
             RETURNING *;
         `;
         const result = await client.query(insertInvoiceText, [orderId, holdInvoiceData.bolt11, invoiceAmountMsat, holdInvoiceData.description, holdInvoiceData.payment_hash]);
-        
+
+        // Update the order with the taker's customer ID
+        const updateOrderText = `
+            UPDATE orders
+            SET taker_customer_id = $1
+            WHERE order_id = $2
+        `;
+        await client.query(updateOrderText, [customer_id, orderId]);
+
         await client.query('COMMIT');
         return result.rows[0];
     } catch (error) {
@@ -133,6 +141,7 @@ async function generateTakerInvoice(orderId, takerDetails) {
         client.release();
     }
 }
+
 
 
 // Monitoring and updating the status
