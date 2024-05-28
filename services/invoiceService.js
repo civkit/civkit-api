@@ -536,7 +536,10 @@ async function handleChatroomTrigger(orderId) {
   return chatId;
 }
 
-
+async function createChatroom(orderId) {
+  const chatroomUrl = `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
+  return chatroomUrl;
+}
 
 const CHAT_APP_URL = 'http://localhost:3456';
 
@@ -633,20 +636,8 @@ async function checkInvoicesAndCreateChatroom(orderId) {
   }
 }
 
-async function createChatroom(orderId) {
-  const response = await fetch(`${CHAT_APP_URL}/ui/chat/make-offer`, {
-    method: 'POST',
-  });
+// Function to create a chatroom
 
-  if (!response.ok) {
-    throw new Error('Failed to create chatroom');
-  }
-
-  const { token } = await response.json();
-
-  // Generate the chatroom URL
-  return `${CHAT_APP_URL}/ui/chat/room/${token}`;
-}
 
 export {
   postHoldinvoice,
