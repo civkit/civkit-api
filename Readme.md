@@ -183,6 +183,15 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       {"message":"Fiat received processed successfully"}'
       ```
 
+    - **Sync Hold Invoices**
+    
+      ```bash
+
+      curl -X POST http://localhost:3000/api/check-accepted-invoices -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTY3OTkwOTAsImV4cCI6MTcxNjgwMjY5MH0.E6bTXUBMFGLduJbz5CUuJ3Em1utPh4kcDer_o-wxpsg" -d '{"orderId": 110}'
+      ```
+
+
+
 This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.
 
 

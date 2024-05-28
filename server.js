@@ -11,7 +11,8 @@ import {
   handleFiatReceived,
   settleHoldInvoiceByHash,
   settleHoldInvoicesByOrderIdService,
-  checkAndUpdateAcceptedInvoices
+  checkInvoicesAndCreateChatroom,
+  createChatroom
 } from './services/invoiceService.js';
 import { registerUser, authenticateUser } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
@@ -123,12 +124,23 @@ initializeNDK().then(() => {
 // New endpoint to check and update accepted invoices
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
-    const { orderId } = req.body;
-    await checkAndUpdateAcceptedInvoices(orderId);
-    res.status(200).json({ message: 'Invoices checked and updated successfully' });
+    await checkAndUpdateAcceptedInvoices();
+    res.status(200).send({ message: 'Invoices checked and updated successfully.' });
   } catch (error) {
-    console.error('Failed to check and update invoices:', error);
-    res.status(500).json({ message: 'Failed to check and update invoices', error: error.message });
+    res.status(500).send({ error: 'Failed to check and update invoices' });
   }
 });
 
+app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    const chatroomUrl = await checkInvoicesAndCreateChatroom(orderId);
+    if (chatroomUrl) {
+      res.status(200).json({ message: 'Chatroom can be created', chatroomUrl });
+    } else {
+      res.status(400).json({ message: 'Not all invoices are in the required state' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to check invoices and create chatroom', error: error.message });
+  }
+});
