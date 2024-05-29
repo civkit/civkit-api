@@ -140,7 +140,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/sync-invoices \
-      -H "Authorization: Bearer <maker_token>"
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTY5Nzk4NDEsImV4cCI6MTcxNjk4MzQ0MX0.psYzgDtYqW6su7nI0mC8tMc4i2SJzdYak-mvFO3tEhc"
       ```
 
     - **Submit a payout lightning invoice:**
@@ -183,7 +183,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       {"message":"Fiat received processed successfully"}'
       ```
 
-    - **Sync Hold Invoices**
+    - **Sync Hold**
     
       ```bash
 

@@ -22,6 +22,7 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
+// creates the hold invoice and 
 async function postHoldinvoice(totalAmountMsat, label, description) {
   const amount_msat = Math.round(totalAmountMsat * 0.05);  // Calculate 5% of the total amount
   const data = {
@@ -53,9 +54,8 @@ async function postHoldinvoice(totalAmountMsat, label, description) {
   }
 }
 
-async function holdInvoiceLookup({ state, payment_hash }) {
+async function holdInvoiceLookup(payment_hash) {
   try {
-    const bodyData = state ? { state } : { payment_hash };
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
       method: 'POST',
       headers: {
@@ -63,7 +63,7 @@ async function holdInvoiceLookup({ state, payment_hash }) {
         'Rune': MY_RUNE,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(bodyData),
+      body: JSON.stringify({ payment_hash }),
       agent: new https.Agent({ rejectUnauthorized: false }),
     });
 
@@ -74,75 +74,115 @@ async function holdInvoiceLookup({ state, payment_hash }) {
     const invoiceData = await response.json();
     return invoiceData.invoices || [];
   } catch (error) {
-    console.error('Failed to lookup invoices:', error);
+    console.error('Failed to lookup hold invoice:', error);
     throw error;
   }
 }
 
 async function syncInvoicesWithNode() {
-  const agent = new https.Agent({
-    rejectUnauthorized: false
-  });
+  const agent = new https.Agent({ rejectUnauthorized: false });
 
-  const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Rune': MY_RUNE,
-    },
-    agent
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP Error: ${response.status}`);
-  }
-  const { invoices } = await response.json();
-
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    const orderUpdates = {};
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+      },
+      agent
+    });
 
-    for (const invoice of invoices) {
-      const res = await client.query(
-        'SELECT status, order_id FROM invoices WHERE payment_hash = $1',
-        [invoice.payment_hash]
-      );
-      if (res.rows.length > 0) {
-        const { status, order_id } = res.rows[0];
-        if (status !== invoice.status) {
-          await client.query(
-            'UPDATE invoices SET status = $1 WHERE payment_hash = $2',
-            [invoice.status, invoice.payment_hash]
-          );
-        }
-
-        if (!orderUpdates[order_id]) {
-          orderUpdates[order_id] = [];
-        }
-        orderUpdates[order_id].push(invoice.status);
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
     }
+    const { invoices } = await response.json();
+    console.log('Fetched invoices from node:', invoices);
 
-    for (const order_id in orderUpdates) {
-      if (orderUpdates[order_id].every(status => status === 'paid')) {
-        await client.query(
-          'UPDATE orders SET status = $1 WHERE order_id = $2',
-          ['bonds_locked', order_id]
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const orderUpdates = {};
+
+      for (const invoice of invoices) {
+        console.log(`Processing invoice with payment_hash: ${invoice.payment_hash}`);
+        const res = await client.query(
+          'SELECT status, order_id, invoice_type FROM invoices WHERE payment_hash = $1',
+          [invoice.payment_hash]
         );
-        console.log(`Order ${order_id} updated to bonds_locked`);
-      }
-    }
+        if (res.rows.length > 0) {
+          const { status, order_id, invoice_type } = res.rows[0];
+          let newStatus = invoice.status;
 
-    await client.query('COMMIT');
+          // Additional check for hold invoices
+          if (invoice_type === 'hold') {
+            console.log(`Checking hold invoice with payment_hash: ${invoice.payment_hash}`);
+            const holdState = await holdInvoiceLookup(invoice.payment_hash);
+            console.log(`Hold state for invoice with payment_hash ${invoice.payment_hash}:`, holdState);
+
+            if (holdState.length > 0) {
+              const holdStateStatus = holdState[0].state;
+              console.log(`Hold invoice with payment_hash ${invoice.payment_hash} has state: ${holdStateStatus}`);
+              if (holdStateStatus === 'ACCEPTED' || holdStateStatus === 'SETTLED') {
+                newStatus = 'accepted';
+              } else if (holdStateStatus === 'CANCELED') {
+                newStatus = 'canceled';
+              }
+            } else {
+              console.log(`No hold state found for invoice with payment_hash ${invoice.payment_hash}`);
+            }
+          }
+
+          if (status !== newStatus) {
+            console.log(`Updating invoice status for payment_hash ${invoice.payment_hash} from ${status} to ${newStatus}`);
+            await client.query(
+              'UPDATE invoices SET status = $1 WHERE payment_hash = $2',
+              [newStatus, invoice.payment_hash]
+            );
+            console.log(`Invoice with payment_hash ${invoice.payment_hash} updated to status: ${newStatus}`);
+          } else {
+            console.log(`Invoice with payment_hash ${invoice.payment_hash} already has status: ${newStatus}`);
+          }
+
+          if (!orderUpdates[order_id]) {
+            orderUpdates[order_id] = [];
+          }
+          orderUpdates[order_id].push(newStatus);
+        } else {
+          console.log(`No matching record found in the database for invoice with payment_hash ${invoice.payment_hash}`);
+        }
+      }
+
+      for (const order_id in orderUpdates) {
+        const statuses = orderUpdates[order_id];
+        const allHoldInvoices = statuses.filter(status => status === 'hold').length === 2;
+        const fullInvoicePaid = statuses.includes('paid');
+
+        if (allHoldInvoices && fullInvoicePaid) {
+          await client.query(
+            'UPDATE orders SET status = $1 WHERE order_id = $2',
+            ['chat_open', order_id]
+          );
+          console.log(`Order ${order_id} updated to chat_open`);
+        } else {
+          console.log(`Order ${order_id} does not meet the criteria for chat_open`);
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      console.error('Error while syncing invoices:', error);
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
-    console.error('Error while syncing invoices:', error);
-    await client.query('ROLLBACK');
+    console.error('Error fetching invoices from node:', error);
     throw error;
-  } finally {
-    client.release();
   }
 }
+
+
 
 async function syncPayoutsWithNode() {
   const agent = new https.Agent({
@@ -575,6 +615,7 @@ async function checkInvoicesAndCreateChatroom(orderId) {
 
       let allHoldInvoices = true;
       let fullInvoicePaid = false;
+      let holdCount = 0;
 
       for (const dbInvoice of invoiceMap.values()) {
         const invoice = invoices.find(inv => inv.payment_hash === dbInvoice.payment_hash);
@@ -596,13 +637,15 @@ async function checkInvoicesAndCreateChatroom(orderId) {
           } else {
             fullInvoicePaid = true;
           }
-        } else if (dbInvoice.status !== 'hold') {
-          console.log(`Hold invoice with payment_hash ${dbInvoice.payment_hash} is not in hold status (dbStatus: ${dbInvoice.status})`);
-          allHoldInvoices = false;
-          break;
+        } else if (dbInvoice.invoice_type === 'hold') {
+          if (invoice.status === 'hold') {
+            holdCount += 1;
+          } else {
+            allHoldInvoices = false;
+          }
         }
 
-        if (dbInvoice.status !== invoice.status && dbInvoice.invoice_type !== 'hold') {
+        if (dbInvoice.status !== invoice.status) {
           await client.query(
             'UPDATE invoices SET status = $1 WHERE payment_hash = $2 AND order_id = $3',
             [invoice.status, invoice.payment_hash, orderId]
@@ -613,7 +656,11 @@ async function checkInvoicesAndCreateChatroom(orderId) {
 
       await client.query('COMMIT');
 
-      if (allHoldInvoices && fullInvoicePaid) {
+      if (holdCount >= 2 && fullInvoicePaid) {
+        await client.query(
+          'UPDATE orders SET status = $1 WHERE order_id = $2',
+          ['chat_open', orderId]
+        );
         const chatroomUrl = await createChatroom(orderId);
         console.log(`Chatroom can be created for Order ID: ${orderId}. Redirect to: ${chatroomUrl}`);
         return chatroomUrl;
@@ -635,6 +682,7 @@ async function checkInvoicesAndCreateChatroom(orderId) {
     throw error;
   }
 }
+
 
 // Function to create a chatroom
 
