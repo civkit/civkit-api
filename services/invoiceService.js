@@ -54,6 +54,7 @@ async function postHoldinvoice(totalAmountMsat, label, description) {
   }
 }
 
+
 async function holdInvoiceLookup(payment_hash) {
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
@@ -70,14 +71,22 @@ async function holdInvoiceLookup(payment_hash) {
     if (!response.ok) {
       throw new Error(`HTTP Error: ${response.status}`);
     }
-
     const invoiceData = await response.json();
-    return invoiceData.invoices || [];
+    console.log('Invoice Data:', invoiceData);
+    return invoiceData;
   } catch (error) {
     console.error('Failed to lookup hold invoice:', error);
     throw error;
   }
 }
+
+// // Test the function
+// const paymentHash = 'c1ef4a63cdc00081afef0e50cfa1a1874bbf3312e36831eb2db2c7cc0f9d2c31';
+
+// holdInvoiceLookup(paymentHash)
+//   .then(data => console.log('Hold Invoice Lookup Data:', data))
+//   .catch(error => console.error('Error:', error));
+
 
 async function syncInvoicesWithNode() {
   const agent = new https.Agent({ rejectUnauthorized: false });
@@ -119,16 +128,10 @@ async function syncInvoicesWithNode() {
             const holdState = await holdInvoiceLookup(invoice.payment_hash);
             console.log(`Hold state for invoice with payment_hash ${invoice.payment_hash}:`, holdState);
 
-            if (holdState.length > 0) {
-              const holdStateStatus = holdState[0].state;
-              console.log(`Hold invoice with payment_hash ${invoice.payment_hash} has state: ${holdStateStatus}`);
-              if (holdStateStatus === 'ACCEPTED' || holdStateStatus === 'SETTLED') {
-                newStatus = 'accepted';
-              } else if (holdStateStatus === 'CANCELED') {
-                newStatus = 'canceled';
-              }
-            } else {
-              console.log(`No hold state found for invoice with payment_hash ${invoice.payment_hash}`);
+            if (holdState.state === 'accepted' || holdState.state === 'settled') {
+              newStatus = 'accepted';
+            } else if (holdState.state === 'canceled') {
+              newStatus = 'canceled';
             }
           }
 
@@ -154,7 +157,7 @@ async function syncInvoicesWithNode() {
 
       for (const order_id in orderUpdates) {
         const statuses = orderUpdates[order_id];
-        const allHoldInvoices = statuses.filter(status => status === 'hold').length === 2;
+        const allHoldInvoices = statuses.filter(status => status === 'accepted').length === 2;
         const fullInvoicePaid = statuses.includes('paid');
 
         if (allHoldInvoices && fullInvoicePaid) {
@@ -181,7 +184,6 @@ async function syncInvoicesWithNode() {
     throw error;
   }
 }
-
 
 
 async function syncPayoutsWithNode() {
