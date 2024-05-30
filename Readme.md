@@ -104,7 +104,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTU2NzgxMjMsImV4cCI6MTcxNTY4MTcyM30.9drthez6_KaiHnJUuwYOYTenzUxvOOvsyNhuAquntC4" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTcwNDI5MjksImV4cCI6MTcxNzA0NjUyOX0.6_VI7QZKfYIZ1say_vCh1hX33Nc_ZdCCo1uFUFhZ8bc" \
       -d '{
         "customer_id": 1234567,
         "order_details": "New Order for Testing",
@@ -120,7 +120,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
-      -H "Authorization: Bearer <taker_token>" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTcwNDI5MjksImV4cCI6MTcxNzA0NjUyOX0.6_VI7QZKfYIZ1say_vCh1hX33Nc_ZdCCo1uFUFhZ8bc" \
       -d '{
         "orderId": 18,
         "takerDetails": {
@@ -128,6 +128,16 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         }
       }'
       ```
+
+      curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
+-H "Authorization: Bearer <taker_token>" \
+-d '{
+  "orderId": 159,
+  "takerDetails": {
+    "description": "Detailed description for the taker"
+  }
+}'
+
       curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
       -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTU2OTA5OTYsImV4cCI6MTcxNTY5NDU5Nn0.NZg3knpnNxhBENFEGvQrTBqx7rRaSUwsdExAZMsBHU8" \
       -d '{

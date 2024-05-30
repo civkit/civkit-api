@@ -270,40 +270,40 @@ async function generateBolt11Invoice(amount_msat, label, description, type, prem
 }
 
 async function postFullAmountInvoice(amount_msat, label, description, orderId, orderType) {
-  if (orderType !== 1) {
-    console.log(`Full amount invoice not required for order type ${orderType}.`);
-    return null;
-  }
-
   const data = {
-    amount_msat,
-    label,
-    description,
-    cltv: 770,
+      amount_msat,
+      label,
+      description,
+      cltv: 770,
   };
 
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, { // Changed to regular invoice endpoint
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Rune': MY_RUNE,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-      agent: new https.Agent({ rejectUnauthorized: false })
-    });
+      const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
+          method: 'POST',
+          headers: {
+              'Accept': 'application/json',
+              'Rune': MY_RUNE,
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data),
+          agent: new https.Agent({ rejectUnauthorized: false })
+      });
 
-    if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status} while posting full amount invoice`);
-    }
+      if (!response.ok) {
+          throw new Error(`HTTP Error: ${response.status}`);
+      }
 
-    const invoiceData = await response.json();
-    console.log(`Full amount invoice created for order ${orderId}`);
-    return invoiceData;
+      const invoiceData = await response.json();
+      if (!invoiceData.bolt11) {
+          console.error('Response missing bolt11:', invoiceData);
+          throw new Error('bolt11 is missing in the response');
+      }
+
+      console.log(`Full amount invoice created for order ${orderId}:`, invoiceData);
+      return invoiceData;
   } catch (error) {
-    console.error('Failed to post full amount invoice:', error);
-    throw error;
+      console.error('Failed to post full amount invoice:', error);
+      throw error;
   }
 }
 

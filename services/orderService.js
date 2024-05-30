@@ -96,52 +96,80 @@ async function processTakeOrder(orderId, holdInvoice) {
     }
 }
 
-async function generateTakerInvoice(orderId, takerDetails, customer_id) {
+async function generateTakerInvoice(orderId, takerDetails) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-
-        // Retrieve the original amount from invoices table
-        const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1 AND invoice_type = 'full'`;
-        const orderDetailsResult = await client.query(orderDetailsQuery, [orderId]);
-
-        if (orderDetailsResult.rows.length === 0) {
-            throw new Error('No full amount invoice found for this order ID');
+        
+        // Retrieve the order type and amount from orders table
+        const orderTypeQuery = `SELECT type, amount_msat FROM orders WHERE order_id = $1`;
+        const orderTypeResult = await client.query(orderTypeQuery, [orderId]);
+        
+        if (orderTypeResult.rows.length === 0) {
+            throw new Error('No order found for this order ID');
         }
 
-        const orderDetails = orderDetailsResult.rows[0];
-        const amountPercentage = 0.05; // 5% of the amount_msat
-        const invoiceAmountMsat = Math.round(orderDetails.amount_msat * amountPercentage);
+        const order = orderTypeResult.rows[0];
+        const orderType = order.type;
+        const orderAmountMsat = order.amount_msat;
+        let invoiceAmountMsat;
+
+        if (orderType === 0) {
+            // Use the full order amount for type 0
+            invoiceAmountMsat = orderAmountMsat;
+        } else {
+            // Retrieve the original amount from invoices table for type 1
+            const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1 AND invoice_type = 'full'`;
+            const orderDetailsResult = await client.query(orderDetailsQuery, [orderId]);
+
+            if (orderDetailsResult.rows.length === 0) {
+                throw new Error('No full amount invoice found for this order ID');
+            }
+
+            const orderDetails = orderDetailsResult.rows[0];
+            const amountPercentage = 0.05; // 5% of the amount_msat
+            invoiceAmountMsat = Math.round(orderDetails.amount_msat * amountPercentage);
+        }
 
         // Generate hold invoice
         const holdInvoiceData = await postHoldinvoice(invoiceAmountMsat, `Order ${orderId} for Taker`, takerDetails.description);
-
+        
         // Insert hold invoice into the database
-        const insertInvoiceText = `
+        const insertHoldInvoiceText = `
             INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type)
             VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'hold')
             RETURNING *;
         `;
-        const result = await client.query(insertInvoiceText, [orderId, holdInvoiceData.bolt11, invoiceAmountMsat, holdInvoiceData.description, holdInvoiceData.payment_hash]);
+        const holdInvoiceResult = await client.query(insertHoldInvoiceText, [orderId, holdInvoiceData.bolt11, invoiceAmountMsat, holdInvoiceData.description, holdInvoiceData.payment_hash]);
+        
+        let fullInvoiceData = null;
+        if (orderType === 0) {
+            // Generate full invoice for order type 0
+            fullInvoiceData = await postFullAmountInvoice(orderAmountMsat, `Order ${orderId} Full Amount`, takerDetails.description, orderId, orderType);
 
-        // Update the order with the taker's customer ID
-        const updateOrderText = `
-            UPDATE orders
-            SET taker_customer_id = $1
-            WHERE order_id = $2
-        `;
-        await client.query(updateOrderText, [customer_id, orderId]);
+            if (!fullInvoiceData || !fullInvoiceData.bolt11) {
+                throw new Error('Failed to generate full amount invoice');
+            }
+
+            // Insert full invoice into the database
+            const insertFullInvoiceText = `
+                INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type)
+                VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'full')
+                RETURNING *;
+            `;
+            await client.query(insertFullInvoiceText, [orderId, fullInvoiceData.bolt11, orderAmountMsat, fullInvoiceData.description, fullInvoiceData.payment_hash]);
+        }
 
         await client.query('COMMIT');
-        return result.rows[0];
+        return { holdInvoice: holdInvoiceResult.rows[0], fullInvoice: fullInvoiceData };
     } catch (error) {
         await client.query('ROLLBACK');
+        console.error('Error in generateTakerInvoice:', error);
         throw error;
     } finally {
         client.release();
     }
 }
-
 
 
 // Monitoring and updating the status
