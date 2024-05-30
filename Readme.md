@@ -120,9 +120,9 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTcwNDI5MjksImV4cCI6MTcxNzA0NjUyOX0.6_VI7QZKfYIZ1say_vCh1hX33Nc_ZdCCo1uFUFhZ8bc" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTcwNTI4MTAsImV4cCI6MTcxNzEzOTIxMH0.gtR3bzloy9gdqAx8qdddljH9Y0BPytyeS7GJ9vR3cOU" \
       -d '{
-        "orderId": 18,
+        "orderId": 171,
         "takerDetails": {
           "description": "Detailed description for the taker"
         }
@@ -150,7 +150,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/sync-invoices \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTY5Nzk4NDEsImV4cCI6MTcxNjk4MzQ0MX0.psYzgDtYqW6su7nI0mC8tMc4i2SJzdYak-mvFO3tEhc"
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTcwNTI0MTYsImV4cCI6MTcxNzEzODgxNn0.0l0CBucV7YNr8JbWGCGFr_xfozvMrldgfNk8JtG_IaI"
       ```
 
     - **Submit a payout lightning invoice:**
