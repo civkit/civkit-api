@@ -60,6 +60,14 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         password VARCHAR(255) NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE chats (
+        chat_id SERIAL PRIMARY KEY,
+        order_id INT NOT NULL,
+        chatroom_url TEXT NOT NULL,
+        status VARCHAR(20) DEFAULT 'open',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
     ```
 
 3. **Create Authentication Tokens for Maker and Taker:**
@@ -79,6 +87,10 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         "password": "makerpassword"
       }'
       ```
+      
+      ```bash
+      export MAKER_TOKEN=<maker_token_from_previous_command>
+      ```
     
     - **Taker Token Creation:**
     
@@ -95,6 +107,10 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         "password": "takerpassword"
       }'
       ```
+      
+      ```bash
+      export TAKER_TOKEN=<taker_token_from_previous_command>
+      ```
 
 4. **Running Test Curl Commands:**
 
@@ -104,7 +120,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTcwNDI5MjksImV4cCI6MTcxNzA0NjUyOX0.6_VI7QZKfYIZ1say_vCh1hX33Nc_ZdCCo1uFUFhZ8bc" \
+      -H "Authorization: Bearer $MAKER_TOKEN" \
       -d '{
         "customer_id": 1234567,
         "order_details": "New Order for Testing",
@@ -112,7 +128,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         "currency": "USD",
         "payment_method": "Credit Card",
         "status": "Pending",
-        "type": 1 //sell order
+        "type": 0
       }'
       ```
     
@@ -120,44 +136,27 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTcwNTI4MTAsImV4cCI6MTcxNzEzOTIxMH0.gtR3bzloy9gdqAx8qdddljH9Y0BPytyeS7GJ9vR3cOU" \
+      -H "Authorization: Bearer $TAKER_TOKEN" \
       -d '{
-        "orderId": 171,
+        "orderId": 175,
         "takerDetails": {
           "description": "Detailed description for the taker"
         }
       }'
       ```
 
-      curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
--H "Authorization: Bearer <taker_token>" \
--d '{
-  "orderId": 159,
-  "takerDetails": {
-    "description": "Detailed description for the taker"
-  }
-}'
-
-      curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTU2OTA5OTYsImV4cCI6MTcxNTY5NDU5Nn0.NZg3knpnNxhBENFEGvQrTBqx7rRaSUwsdExAZMsBHU8" \
-      -d '{
-        "orderId": 93,
-        "takerDetails": {
-          "description": "Detailed description for the taker"
-        }
-      }'
     - **Sync invoices table to Lightning node:**
     
       ```bash
       curl -X POST http://localhost:3000/api/sync-invoices \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTcwNTI0MTYsImV4cCI6MTcxNzEzODgxNn0.0l0CBucV7YNr8JbWGCGFr_xfozvMrldgfNk8JtG_IaI"
+      -H "Authorization: Bearer $MAKER_TOKEN"
       ```
 
     - **Submit a payout lightning invoice:**
     
       ```bash
       curl -X POST http://localhost:3000/api/payouts/submit -H "Content-Type: application/json" \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTU2OTA5OTYsImV4cCI6MTcxNTY5NDU5Nn0.NZg3knpnNxhBENFEGvQrTBqx7rRaSUwsdExAZMsBHU8" \
+      -H "Authorization: Bearer $TAKER_TOKEN" \
       -d '{
         "order_id": 93,
         "ln_invoice": "lntb500n1pnyxhj6sp5wa0qddh6m7ngxc26kc6jwt9usdxgsu4wren9nx8dxe6qjxjgm0dqpp5yceze5tt2g77g4yuc030d3407mr5rkvzmgk2eqhvv5tqp3cytl0sdq4daexgetj8yej6arpddjhyxqyjw5qcqp2rzjqfnfnd4vynmcfz6ulcc2fvpp7et3dw9wdqg3sxnl2ljn89vvml8kk2hjdqqq0dqqqqqqqqqpqqqqqzsqqcrzjqgtm5k28l67ntm5jffy8kzv794mfkj3ak44e4pfzn9xyc5fjken6c2hjdqqq0vcqqqqqqqqpqqqqqzsqqcrzjqgtm5k28l67ntm5jffy8kzv794mfkj3ak44e4pfzn9xyc5fjken6c2h5f5qqtwqqqqqqqqqpqqqqqzsqqc9qxpqysgqsfagrq3krtymttwrnjkdwm3yvhpjq2590c4nt3d8r0nwzzxxt058y60g9lp0gztm6lrdvp5jcwnfy5zzhr23lkwh5ua4tawzrhz0hacpyhvw8f"
@@ -177,7 +176,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/settle-holdinvoice -H "Content-Type: application/json" \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTgsInVzZXJuYW1lIjoidGFrZXIiLCJpYXQiOjE3MTU2MTAyMTUsImV4cCI6MTcxNTYxMzgxNX0.GAhNwEjzoqNd0vSA7lHGL3zmhtJBkYhb-ZqNeOJ6m0M" \
+      -H "Authorization: Bearer $TAKER_TOKEN" \
       -d '{
         "payment_hash": "f6b9e1824a3f0c71ecab49452b32e6d7d41f3c082f43b6e1e413cd159a341fe9"
       }'
@@ -188,7 +187,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       ```bash
       curl -X POST http://localhost:3000/api/fiat-received \
       -H "Content-Type: application/json" \
-      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTU2ODkzODksImV4cCI6MTcxNTY5Mjk4OX0.Cus4LOmnXY4S_CTMiL3eDn-J1sRbG1Ioxv2HLkLo4sI" \
+      -H "Authorization: Bearer $MAKER_TOKEN" \
       -d '{"order_id": 93}'
       {"message":"Fiat received processed successfully"}'
       ```
@@ -196,12 +195,19 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     - **Sync Hold**
     
       ```bash
-
-      curl -X POST http://localhost:3000/api/check-accepted-invoices -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTcsInVzZXJuYW1lIjoibWFrZXIiLCJpYXQiOjE3MTY3OTkwOTAsImV4cCI6MTcxNjgwMjY5MH0.E6bTXUBMFGLduJbz5CUuJ3Em1utPh4kcDer_o-wxpsg" -d '{"orderId": 110}'
+      curl -X POST http://localhost:3000/api/check-accepted-invoices -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $MAKER_TOKEN" \
+      -d '{"orderId": 110}'
       ```
 
-
+    - **Check and create chatroom:**
+    
+      ```bash
+      curl -X POST http://localhost:3000/api/check-and-create-chatroom -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $MAKER_TOKEN" \
+      -d '{
+        "orderId": 181
+      }'
+      ```
 
 This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.
-
-

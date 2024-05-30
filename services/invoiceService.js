@@ -578,13 +578,8 @@ async function handleChatroomTrigger(orderId) {
   return chatId;
 }
 
-async function createChatroom(orderId) {
-  const chatroomUrl = `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
-  return chatroomUrl;
-}
 
 const CHAT_APP_URL = 'http://localhost:3456';
-
 async function checkInvoicesAndCreateChatroom(orderId) {
   const agent = new https.Agent({ rejectUnauthorized: false });
 
@@ -683,6 +678,10 @@ async function checkInvoicesAndCreateChatroom(orderId) {
     console.error('Error checking and updating invoices:', error);
     throw error;
   }
+}
+
+async function createChatroom(orderId) {
+  return `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
 }
 
 

@@ -18,7 +18,7 @@ import { registerUser, authenticateUser } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payouts.js';
 import { initializeNDK } from './config/ndkSetup.js';  // Adjusted import
-
+import { checkAndCreateChatroom } from './services/chatService.js';
 dotenv.config();
 
 const app = express();
@@ -134,7 +134,7 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
   try {
     const { orderId } = req.body;
-    const chatroomUrl = await checkInvoicesAndCreateChatroom(orderId);
+    const chatroomUrl = await checkAndCreateChatroom(orderId);
     if (chatroomUrl) {
       res.status(200).json({ message: 'Chatroom can be created', chatroomUrl });
     } else {
