@@ -122,7 +122,6 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       curl -X POST http://localhost:3000/api/order -H "Content-Type: application/json" \
       -H "Authorization: Bearer $MAKER_TOKEN" \
       -d '{
-        "customer_id": 1234567,
         "order_details": "New Order for Testing",
         "amount_msat": 50000,
         "currency": "USD",
