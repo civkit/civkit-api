@@ -187,7 +187,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       curl -X POST http://localhost:3000/api/fiat-received \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $MAKER_TOKEN" \
-      -d '{"order_id": 183}'
+      -d '{"order_id": 184}'
       {"message":"Fiat received processed successfully"}'
       ```
 
