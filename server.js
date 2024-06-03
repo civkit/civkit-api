@@ -18,7 +18,7 @@ import { registerUser, authenticateUser } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payouts.js';
 import { initializeNDK } from './config/ndkSetup.js';  // Adjusted import
-import { checkAndCreateChatroom } from './services/chatService.js';
+import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatService.js';
 dotenv.config();
 
 const app = express();
@@ -131,16 +131,24 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   }
 });
 
+// Backend route to create chatroom
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
   try {
-    const { orderId } = req.body;
-    const chatroomUrl = await checkAndCreateChatroom(orderId);
-    if (chatroomUrl) {
-      res.status(200).json({ message: 'Chatroom can be created', chatroomUrl });
-    } else {
-      res.status(400).json({ message: 'Not all invoices are in the required state' });
-    }
+      const { orderId } = req.body;
+      const { makeOfferUrl, acceptOfferUrl } = await checkAndCreateChatroom(orderId);
+      res.status(200).json({ makeChatUrl: makeOfferUrl, acceptChatUrl: acceptOfferUrl });
   } catch (error) {
-    res.status(500).json({ message: 'Failed to check invoices and create chatroom', error: error.message });
+      res.status(500).json({ message: 'Failed to create chatroom', error: error.message });
+  }
+});
+
+// Endpoint to update accept-offer URL
+app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
+  try {
+    const { chat_id, accept_offer_url } = req.body;
+    await updateAcceptOfferUrl(chat_id, accept_offer_url);
+    res.status(200).json({ message: 'Accept-offer URL updated successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to update accept-offer URL', error: error.message });
   }
 });

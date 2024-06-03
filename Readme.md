@@ -109,7 +109,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       ```
       
       ```bash
-      export TAKER_TOKEN=<taker_token_from_previous_command>
+      export TAKER_TOKEN=
       ```
 
 4. **Running Test Curl Commands:**
@@ -137,7 +137,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
       -H "Authorization: Bearer $TAKER_TOKEN" \
       -d '{
-        "orderId": 175,
+        "orderId": 183,
         "takerDetails": {
           "description": "Detailed description for the taker"
         }
@@ -157,8 +157,8 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       curl -X POST http://localhost:3000/api/payouts/submit -H "Content-Type: application/json" \
       -H "Authorization: Bearer $TAKER_TOKEN" \
       -d '{
-        "order_id": 93,
-        "ln_invoice": "lntb500n1pnyxhj6sp5wa0qddh6m7ngxc26kc6jwt9usdxgsu4wren9nx8dxe6qjxjgm0dqpp5yceze5tt2g77g4yuc030d3407mr5rkvzmgk2eqhvv5tqp3cytl0sdq4daexgetj8yej6arpddjhyxqyjw5qcqp2rzjqfnfnd4vynmcfz6ulcc2fvpp7et3dw9wdqg3sxnl2ljn89vvml8kk2hjdqqq0dqqqqqqqqqpqqqqqzsqqcrzjqgtm5k28l67ntm5jffy8kzv794mfkj3ak44e4pfzn9xyc5fjken6c2hjdqqq0vcqqqqqqqqpqqqqqzsqqcrzjqgtm5k28l67ntm5jffy8kzv794mfkj3ak44e4pfzn9xyc5fjken6c2h5f5qqtwqqqqqqqqqpqqqqqzsqqc9qxpqysgqsfagrq3krtymttwrnjkdwm3yvhpjq2590c4nt3d8r0nwzzxxt058y60g9lp0gztm6lrdvp5jcwnfy5zzhr23lkwh5ua4tawzrhz0hacpyhvw8f"
+        "order_id": 183,
+        "ln_invoice": "lntb500n1pn9suexsp5ef6zc0ee3txs5sntdmwrhpy6su0lj3q37x34y9r8mulkeeljml7qpp5z0r9c2amcpuwkdspd9nh3tmk9svslx99c5u3k8l2j7548yu45ursdqddaexgetjxyurxxqyjw5qcqp2rzjqgtm5k28l67ntm5jffy8kzv794mfkj3ak44e4pfzn9xyc5fjken6c2hjdqqq0vcqqqqqqqqpqqqqqzsqqc9qxpqysgq8r3phkr780mataj44tkzv72gnj4cak2gyyex05p9fg4874xh5njscwuvpnywmfgrgz6tu72mkhqq7ltld2hpjkthky5h7sq8aw9wvfgqqztvpl"
       }'
       ```
 
@@ -187,7 +187,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       curl -X POST http://localhost:3000/api/fiat-received \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $MAKER_TOKEN" \
-      -d '{"order_id": 93}'
+      -d '{"order_id": 183}'
       {"message":"Fiat received processed successfully"}'
       ```
 
@@ -205,7 +205,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       curl -X POST http://localhost:3000/api/check-and-create-chatroom -H "Content-Type: application/json" \
       -H "Authorization: Bearer $MAKER_TOKEN" \
       -d '{
-        "orderId": 181
+        "orderId": 183
       }'
       ```
 

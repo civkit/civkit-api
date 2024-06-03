@@ -18,14 +18,12 @@ const pool = new Pool({
 
 async function createChatroom(orderId) {
     const makeOfferUrl = `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
-    const acceptOfferUrl = `${CHAT_APP_URL}/ui/chat/accept-offer?orderId=${orderId}`;
-    return { makeOfferUrl, acceptOfferUrl };
-  }
+    return { makeOfferUrl };
+}
 
-  async function saveAcceptOfferUrl(orderId, acceptOfferUrl) {
+async function saveAcceptOfferUrl(orderId, acceptOfferUrl) {
     const client = await pool.connect();
     try {
-      // Update the chats table with the accept-offer URL
       await client.query(
         'UPDATE chats SET accept_offer_url = $1 WHERE order_id = $2',
         [acceptOfferUrl, orderId]
@@ -37,36 +35,60 @@ async function createChatroom(orderId) {
     } finally {
       client.release();
     }
-  }
-  
+}
+
+async function updateAcceptOfferUrl(chat_id, accept_offer_url) {
+    const client = await pool.connect();
+    try {
+      await client.query(
+        'UPDATE chats SET accept_offer_url = $1 WHERE chat_id = $2',
+        [accept_offer_url, chat_id]
+      );
+      console.log(`Accept-offer URL updated for Chat ID: ${chat_id}`);
+    } catch (error) {
+      console.error('Error updating accept-offer URL:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+}
 
 async function checkAndCreateChatroom(orderId) {
     const client = await pool.connect();
     try {
-      const result = await client.query('SELECT * FROM orders WHERE order_id = $1 AND status = $2', [orderId, 'chat_open']);
+      // Check if a chatroom already exists for the given orderId
+      const existingChatResult = await client.query('SELECT * FROM chats WHERE order_id = $1', [orderId]);
       
-      if (result.rows.length === 0) {
+      if (existingChatResult.rows.length > 0) {
+        const existingChat = existingChatResult.rows[0];
+        console.log(`Chatroom already exists for Order ID: ${orderId}. Returning existing accept-offer URL: ${existingChat.accept_offer_url}`);
+        return { makeOfferUrl: existingChat.chatroom_url, acceptOfferUrl: existingChat.accept_offer_url || '' };
+      }
+
+      // Check if the order exists and has status 'chat_open'
+      const orderResult = await client.query('SELECT * FROM orders WHERE order_id = $1 AND status = $2', [orderId, 'chat_open']);
+      
+      if (orderResult.rows.length === 0) {
         console.log(`No orders with status 'chat_open' found for order ID: ${orderId}`);
         return null;
       }
+
+      const order = orderResult.rows[0];
+      const { makeOfferUrl } = await createChatroom(order.order_id);
   
-      const order = result.rows[0];
-      const { makeOfferUrl, acceptOfferUrl } = await createChatroom(order.order_id);
-  
-      // Save both URLs to the chat table
       await client.query(
         'INSERT INTO chats (order_id, chatroom_url, accept_offer_url, status) VALUES ($1, $2, $3, $4)',
-        [order.order_id, makeOfferUrl, acceptOfferUrl, 'open']
+        [order.order_id, makeOfferUrl, '', 'open']
       );
-  
-      console.log(`Chatroom created for Order ID: ${order.order_id}. Make Offer URL: ${makeOfferUrl}, Accept Offer URL: ${acceptOfferUrl}`);
-      return { makeOfferUrl, acceptOfferUrl };
+
+      console.log(`Chatroom created for Order ID: ${order.order_id}. Make Offer URL: ${makeOfferUrl}`);
+      return { makeOfferUrl, acceptOfferUrl: '' };
     } catch (error) {
       console.error('Error checking chat open status:', error);
       throw error;
     } finally {
       client.release();
     }
-  }
-  
-export { checkAndCreateChatroom };
+}
+
+export { checkAndCreateChatroom, updateAcceptOfferUrl };
