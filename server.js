@@ -12,13 +12,16 @@ import {
   settleHoldInvoiceByHash,
   settleHoldInvoicesByOrderIdService,
   checkInvoicesAndCreateChatroom,
-  createChatroom
+  createChatroom,
+  settleHoldInvoices
 } from './services/invoiceService.js';
 import { registerUser, authenticateUser } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payouts.js';
 import { initializeNDK } from './config/ndkSetup.js';  // Adjusted import
 import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatService.js';
+import settleRoutes from '/home/dave/civkit-api/routes/settleRoutes.js';
+
 dotenv.config();
 
 const app = express();
@@ -152,3 +155,5 @@ app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
     res.status(500).json({ message: 'Failed to update accept-offer URL', error: error.message });
   }
 });
+
+app.use('/api/settle', settleRoutes);

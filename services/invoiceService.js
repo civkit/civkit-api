@@ -309,6 +309,7 @@ async function postFullAmountInvoice(amount_msat, label, description, orderId, o
   }
 }
 
+
 async function handleFiatReceived(orderId) {
   const client = await pool.connect();
   try {
@@ -528,26 +529,18 @@ const settleHoldInvoicesByOrderIdService = async (orderId) => {
     // Fetch all hold invoices for the order
     const invoicesResult = await client.query(
       'SELECT payment_hash FROM invoices WHERE order_id = $1 AND invoice_type = $2 AND status = $3',
-      [orderId, 'hold', 'unpaid']
+      [orderId, 'hold', 'accepted']
     );
 
     const settlePromises = invoicesResult.rows.map(async (invoice) => {
-      const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Rune': MY_RUNE,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ payment_hash: invoice.payment_hash }),
-        agent: new https.Agent({ rejectUnauthorized: false })
-      });
+      const settleData = await settleHoldInvoiceByHash(invoice.payment_hash);
 
-      if (!response.ok) {
-        throw new Error(`Failed to settle invoice with payment_hash: ${invoice.payment_hash}`);
-      }
+      // Update the invoice status to 'settled' in the database
+      await client.query(
+        'UPDATE invoices SET status = $1 WHERE payment_hash = $2',
+        ['settled', invoice.payment_hash]
+      );
 
-      const settleData = await response.json();
       return settleData;
     });
 
@@ -685,7 +678,59 @@ async function createChatroom(orderId) {
 }
 
 
-// Function to create a chatroom
+async function updateOrderStatus(orderId, status) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      'UPDATE orders SET status = $1 WHERE order_id = $2 RETURNING *',
+      [status, orderId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Failed to update order status');
+    }
+
+    return result.rows[0];
+  } catch (error) {
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function getHoldInvoicesByOrderId(orderId) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      'SELECT payment_hash FROM invoices WHERE order_id = $1 AND invoice_type = $2 AND status = $3',
+      [orderId, 'hold', 'accepted']
+    );
+
+    return result.rows.map(row => row.payment_hash);
+  } catch (error) {
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function settleHoldInvoices(orderId) {
+  try {
+    // Update order status to 'trade_complete'
+    await updateOrderStatus(orderId, 'trade_complete');
+    
+    // Get all hold invoices for the order
+    const holdInvoices = await getHoldInvoicesByOrderId(orderId);
+    const settlePromises = holdInvoices.map(paymentHash => settleHoldInvoice(paymentHash));
+
+    // Settle all hold invoices
+    const settledInvoices = await Promise.all(settlePromises);
+    return settledInvoices;
+  } catch (error) {
+    throw error;
+  }
+}
+
 
 
 export {
@@ -703,5 +748,8 @@ export {
   payInvoice, // Export payInvoice
   settleHoldInvoicesByOrderIdService,
   checkInvoicesAndCreateChatroom,
-  createChatroom
+  createChatroom,
+  settleHoldInvoices, // Add this to the export statement
+  updateOrderStatus,  // Add this to the export statement
+  getHoldInvoicesByOrderId  // Add this to the export statement
 };
