@@ -18,6 +18,7 @@
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
     "node-fetch": "^3.3.2",
+    "openpgp": "^5.11.1",
     "pg": "^8.11.5",
     "websocket-polyfill": "^1.0.0"
   }

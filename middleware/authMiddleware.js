@@ -9,7 +9,7 @@ export const authenticateJWT = (req, res, next) => {
 
     try {
       const user = verifyToken(token);
-      req.user = user;
+      req.user = user; // This now includes id, username, and customer_id
       next();
     } catch (error) {
       return res.sendStatus(403);

@@ -10,12 +10,17 @@ import {
   syncPayoutsWithNode,
   handleFiatReceived,
   settleHoldInvoiceByHash,
-  settleHoldInvoicesByOrderIdService
+  settleHoldInvoicesByOrderIdService,
+  checkInvoicesAndCreateChatroom,
+  createChatroom,
+  settleHoldInvoices
 } from './services/invoiceService.js';
 import { registerUser, authenticateUser } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payouts.js';
 import { initializeNDK } from './config/ndkSetup.js';  // Adjusted import
+import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatService.js';
+import settleRoutes from '/home/dave/civkit-api/routes/settleRoutes.js';
 
 dotenv.config();
 
@@ -118,3 +123,37 @@ initializeNDK().then(() => {
     console.log(`Server running on port ${PORT}`);
   });
 });
+
+// New endpoint to check and update accepted invoices
+app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
+  try {
+    await checkAndUpdateAcceptedInvoices();
+    res.status(200).send({ message: 'Invoices checked and updated successfully.' });
+  } catch (error) {
+    res.status(500).send({ error: 'Failed to check and update invoices' });
+  }
+});
+
+// Backend route to create chatroom
+app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
+  try {
+      const { orderId } = req.body;
+      const { makeOfferUrl, acceptOfferUrl } = await checkAndCreateChatroom(orderId);
+      res.status(200).json({ makeChatUrl: makeOfferUrl, acceptChatUrl: acceptOfferUrl });
+  } catch (error) {
+      res.status(500).json({ message: 'Failed to create chatroom', error: error.message });
+  }
+});
+
+// Endpoint to update accept-offer URL
+app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
+  try {
+    const { chat_id, accept_offer_url } = req.body;
+    await updateAcceptOfferUrl(chat_id, accept_offer_url);
+    res.status(200).json({ message: 'Accept-offer URL updated successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to update accept-offer URL', error: error.message });
+  }
+});
+
+app.use('/api/settle', settleRoutes);
