@@ -45,6 +45,9 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         invoice_type VARCHAR(10)
     );
 
+    ALTER TABLE invoices ADD COLUMN user_type VARCHAR(10);
+
+
     CREATE TABLE payouts (
         payout_id SERIAL PRIMARY KEY,
         order_id INT NOT NULL REFERENCES orders(order_id),
@@ -127,7 +130,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         "currency": "USD",
         "payment_method": "Credit Card",
         "status": "Pending",
-        "type": 0
+        "type": 1
       }'
       ```
     
@@ -137,7 +140,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       curl -X POST http://localhost:3000/api/orders/take -H "Content-Type: application/json" \
       -H "Authorization: Bearer $TAKER_TOKEN" \
       -d '{
-        "orderId": 183,
+        "orderId": 249,
         "takerDetails": {
           "description": "Detailed description for the taker"
         }

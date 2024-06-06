@@ -22,4 +22,19 @@ router.post('/lookup-hold-invoice', async (req, res) => {
   }
 });
 
+router.get('/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+  const { type } = req.query; // Get the invoice type from query parameter
+  try {
+    const result = await query('SELECT * FROM invoices WHERE order_id = $1 AND invoice_type = $2', [orderId, type]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 module.exports = router;
