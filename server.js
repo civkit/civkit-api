@@ -142,16 +142,34 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   }
 });
 
-// Backend route to create chatroom
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
+  const { orderId } = req.body;
+  const userId = req.user.id; // Assuming `req.user` contains the authenticated user's details
+
   try {
-    const { orderId } = req.body;
+    // Fetch the order details
+    const orderResult = await query('SELECT * FROM orders WHERE order_id = $1', [orderId]);
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    const order = orderResult.rows[0];
+    console.log('Order details:', order);
+    console.log('User ID:', userId);
+
+    // Check if the user is the maker or taker of the order
+    if (order.customer_id !== userId && order.taker_customer_id !== userId) {
+      return res.status(403).json({ message: 'You are not authorized to access this chatroom' });
+    }
+
+    // Proceed to create or check chatroom
     const { makeOfferUrl, acceptOfferUrl } = await checkAndCreateChatroom(orderId);
     res.status(200).json({ makeChatUrl: makeOfferUrl, acceptChatUrl: acceptOfferUrl });
   } catch (error) {
     res.status(500).json({ message: 'Failed to create chatroom', error: error.message });
   }
 });
+
 
 // Endpoint to update accept-offer URL
 app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
@@ -213,6 +231,34 @@ app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
       return res.status(404).json({ error: 'Taker invoice not found' });
     }
     res.status(200).json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// New endpoint to get the full invoice by order ID
+app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const result = await query('SELECT * FROM invoices WHERE order_id = $1 AND invoice_type = $2', [parseInt(orderId, 10), 'full']);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Full invoice not found' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// New endpoint to lookup full invoice by payment hash
+app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
+  const { payment_hash } = req.body;
+  try {
+    const result = await query('SELECT * FROM invoices WHERE payment_hash = $1 AND invoice_type = $2', [payment_hash, 'full']);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Full invoice not found' });
+    }
+    res.status(200).json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

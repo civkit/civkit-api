@@ -151,7 +151,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     
       ```bash
       curl -X POST http://localhost:3000/api/sync-invoices \
-      -H "Authorization: Bearer $MAKER_TOKEN"
+      -H "Authorization: Bearer $TAKER_TOKEN"
       ```
 
     - **Submit a payout lightning invoice:**
