@@ -136,8 +136,8 @@ async function generateTakerInvoice(orderId, takerDetails) {
         
         // Insert hold invoice into the database
         const insertHoldInvoiceText = `
-            INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type)
-            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'hold')
+            INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type, user_type)
+            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'hold', 'taker')
             RETURNING *;
         `;
         const holdInvoiceResult = await client.query(insertHoldInvoiceText, [orderId, holdInvoiceData.bolt11, invoiceAmountMsat, holdInvoiceData.description, holdInvoiceData.payment_hash]);
@@ -153,8 +153,8 @@ async function generateTakerInvoice(orderId, takerDetails) {
 
             // Insert full invoice into the database
             const insertFullInvoiceText = `
-                INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type)
-                VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'full')
+                INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type, user_type)
+                VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'full', 'taker')
                 RETURNING *;
             `;
             await client.query(insertFullInvoiceText, [orderId, fullInvoiceData.bolt11, orderAmountMsat, fullInvoiceData.description, fullInvoiceData.payment_hash]);
@@ -170,7 +170,6 @@ async function generateTakerInvoice(orderId, takerDetails) {
         client.release();
     }
 }
-
 
 // Monitoring and updating the status
 async function checkAndUpdateOrderStatus(orderId, payment_hash) {

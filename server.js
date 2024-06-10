@@ -1,6 +1,8 @@
 // server.js
 import express from 'express';
 import dotenv from 'dotenv';
+import cors from 'cors';
+import { config } from 'dotenv';
 import { authenticateJWT } from './middleware/authMiddleware.js';
 import { generateToken } from './utils/auth.js';
 import {
@@ -18,16 +20,23 @@ import {
 import { registerUser, authenticateUser } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payouts.js';
-import { initializeNDK } from './config/ndkSetup.js';  // Adjusted import
+import settleRoutes from './routes/settleRoutes.js';
+import { initializeNDK } from './config/ndkSetup.js';
 import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatService.js';
-import settleRoutes from '/home/dave/civkit-api/routes/settleRoutes.js';
+import { query } from './config/db.js';
 
-dotenv.config();
+config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+
+app.use(cors({
+  origin: 'http://localhost:3001',
+  methods: 'GET,POST,PUT,DELETE',
+  allowedHeaders: 'Content-Type,Authorization',
+}));
 
 // User Registration
 app.post('/api/register', async (req, res) => {
@@ -72,9 +81,9 @@ app.post('/api/holdinvoicelookup', authenticateJWT, async (req, res) => {
   }
 });
 
-app.use('/api/order', authenticateJWT, orderRoutes);
-app.use('/api/payouts', authenticateJWT, payoutsRoutes);
+// Use only /api/orders for all order-related operations
 app.use('/api/orders', authenticateJWT, orderRoutes);
+app.use('/api/payouts', authenticateJWT, payoutsRoutes);
 
 app.post('/api/sync-invoices', authenticateJWT, async (req, res) => {
   try {
@@ -118,7 +127,6 @@ app.post('/api/settle-holdinvoices-by-order', authenticateJWT, async (req, res) 
 
 // Initialize NDK and create identity
 initializeNDK().then(() => {
-  // Start the Express server
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
@@ -134,16 +142,34 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   }
 });
 
-// Backend route to create chatroom
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
+  const { orderId } = req.body;
+  const userId = req.user.id; // Assuming `req.user` contains the authenticated user's details
+
   try {
-      const { orderId } = req.body;
-      const { makeOfferUrl, acceptOfferUrl } = await checkAndCreateChatroom(orderId);
-      res.status(200).json({ makeChatUrl: makeOfferUrl, acceptChatUrl: acceptOfferUrl });
+    // Fetch the order details
+    const orderResult = await query('SELECT * FROM orders WHERE order_id = $1', [orderId]);
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    const order = orderResult.rows[0];
+    console.log('Order details:', order);
+    console.log('User ID:', userId);
+
+    // Check if the user is the maker or taker of the order
+    if (order.customer_id !== userId && order.taker_customer_id !== userId) {
+      return res.status(403).json({ message: 'You are not authorized to access this chatroom' });
+    }
+
+    // Proceed to create or check chatroom
+    const { makeOfferUrl, acceptOfferUrl } = await checkAndCreateChatroom(orderId);
+    res.status(200).json({ makeChatUrl: makeOfferUrl, acceptChatUrl: acceptOfferUrl });
   } catch (error) {
-      res.status(500).json({ message: 'Failed to create chatroom', error: error.message });
+    res.status(500).json({ message: 'Failed to create chatroom', error: error.message });
   }
 });
+
 
 // Endpoint to update accept-offer URL
 app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
@@ -157,3 +183,83 @@ app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
 });
 
 app.use('/api/settle', settleRoutes);
+
+// New endpoint: Get all orders
+app.get('/api/orders', authenticateJWT, async (req, res) => {
+  try {
+    const result = await query('SELECT * FROM orders');
+    res.status(200).json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// New endpoint: Get order by ID
+app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const result = await query('SELECT * FROM orders WHERE order_id = $1', [orderId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// New endpoint: Get invoice by order ID
+app.get('/api/invoice/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const result = await query('SELECT * FROM invoices WHERE order_id = $1', [orderId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// In your routes file
+app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const result = await query('SELECT * FROM invoices WHERE order_id = $1 AND user_type = $2', [orderId, 'taker']);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Taker invoice not found' });
+    }
+    res.status(200).json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// New endpoint to get the full invoice by order ID
+app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const result = await query('SELECT * FROM invoices WHERE order_id = $1 AND invoice_type = $2', [parseInt(orderId, 10), 'full']);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Full invoice not found' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// New endpoint to lookup full invoice by payment hash
+app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
+  const { payment_hash } = req.body;
+  try {
+    const result = await query('SELECT * FROM invoices WHERE payment_hash = $1 AND invoice_type = $2', [payment_hash, 'full']);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Full invoice not found' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
