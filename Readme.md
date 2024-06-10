@@ -1,3 +1,25 @@
+## Civkit API
+This is a an escrow/chat API using c-lightning for hold invoices, integrated with a seperate chat that allows a civkit node runner to manage the escrow and backend of a peer to peer marketplace from a laptop. We have attempted to simplify some of the steps needed to handle this.
+
+What this code does
+- create hold invoices
+- create full invoices
+- payout invoices based on orderIds
+- returns chat url's for trades
+
+This has only been used on testnet and is using cligtning. We would like to add other escrow options including LND and on-chain escrow as options for traders. This is intended as a starting template and feel free to open issues and PR's to help us get there.
+
+To run the code as it is, requires a few things
+- c-lightning node https://github.com/ElementsProject/lightning****
+- hold invoice plugin enabled https://github.com/daywalker90/holdinvoice?tab=readme-ov-file#installation****
+- postgres database
+- nostr relay on port 8080
+- chat on localhost:3456
+
+You can configure the .env file for your lightning node and jwt secret. In config/db,js, you can configure postgres credentials. THere is also ndksetup.js which currently doesnt sign events but creates a nostr identity. 
+
+In future development, this should be the escrow runner's identity and users can send signed events to rank them as an escrow runner/dispute moderator.
+
 ## Setting Up PostgreSQL Database and Tables
 
 This guide walks you through setting up a PostgreSQL database and tables to store information about orders and invoices.
