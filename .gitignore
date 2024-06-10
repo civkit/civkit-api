@@ -1,3 +1,25 @@
 node_modules/
 .env
 .NDK_private_key
+
+# Dependency directories
+node_modules/
+
+# Environment configuration
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Production build directory
+.next/
+
+# Misc
+.DS_Store
+*.log
+
+# OS or Editor folders
+.vscode/
+.idea/
+Thumbs.db
