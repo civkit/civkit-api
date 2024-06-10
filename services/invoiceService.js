@@ -80,12 +80,6 @@ async function holdInvoiceLookup(payment_hash) {
   }
 }
 
-// // Test the function
-// const paymentHash = 'c1ef4a63cdc00081afef0e50cfa1a1874bbf3312e36831eb2db2c7cc0f9d2c31';
-
-// holdInvoiceLookup(paymentHash)
-//   .then(data => console.log('Hold Invoice Lookup Data:', data))
-//   .catch(error => console.error('Error:', error));
 
 
 async function syncInvoicesWithNode() {
@@ -563,7 +557,7 @@ async function notifyUsers(orderId) {
 
 async function handleChatroomTrigger(orderId) {
   const chatId = generateChatId(orderId); // Replace with your chatroom logic
-  console.log(`Chatroom ID ${chatId} is created for Order ID: ${orderId}`);
+  //console.log(`Chatroom ID ${chatId} is created for Order ID: ${orderId}`);
   
   // Notify both users that the chatroom is available
   await notifyUsers(orderId);

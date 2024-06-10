@@ -18,3 +18,4 @@ export const authenticateJWT = (req, res, next) => {
     res.sendStatus(401);
   }
 };
+
