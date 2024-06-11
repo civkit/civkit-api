@@ -234,4 +234,16 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       }'
       ```
 
+
+
+    - **Settle Hold invoices by Order ID**
+    
+      ```bash
+curl -X POST http://localhost:3000/api/settle-holdinvoices-by-order \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer $TAKER_TOKEN" \
+     -d '{"orderId": 365}'
+      ```
+
+
 This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.
