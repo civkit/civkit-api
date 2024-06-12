@@ -93,6 +93,8 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         status VARCHAR(20) DEFAULT 'open',
         created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    ALTER TABLE chats ADD COLUMN token VARCHAR(255);
+
     ```
 3. **Create .env file using .env-sample**
 
