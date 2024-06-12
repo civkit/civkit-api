@@ -94,6 +94,8 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         created_at TIMESTAMPTZ DEFAULT NOW()
     );
     ALTER TABLE chats ADD COLUMN token VARCHAR(255);
+    ALTER TABLE chats ADD COLUMN accept_offer_url VARCHAR(955);
+
 
     ```
 3. **Create .env file using .env-sample**
