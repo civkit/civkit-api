@@ -94,8 +94,24 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         created_at TIMESTAMPTZ DEFAULT NOW()
     );
     ```
+3. **Create .env file using .env-sample**
 
-3. **Create Authentication Tokens for Maker and Taker:**
+      ```
+      LIGHTNING_NODE_API_URL=https://localhost:3010
+      RUNE=
+      DB_USER=
+      DB_HOST=
+      DB_NAME=holdinvoices
+      DB_PASSWORD=
+      DB_PORT=5432
+      JWT_SECRET=
+      ```
+You can generate the secret with openssl rand -base64 64 and use that as the jwt. Ideally, we can automate this later.
+
+Pay close attention to your postgres setup now as it can be a pain to debug later. Double check the user/host/password. Its a good idea to have a seperate set of credentials for this to avoid confusion and keep things a bit more organized.
+
+
+4. **Create Authentication Tokens for Maker and Taker:**
 
     - **Maker Token Creation:**
     
@@ -136,8 +152,8 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
       ```bash
       export TAKER_TOKEN=
       ```
-
-4. **Running Test Curl Commands:**
+Everythhing after this will require a lightning node.
+5. **Running Test Curl Commands:**
 
     Once you've set up the database and tables, you can use curl commands to interact with your API for testing purposes. Here are some example commands:
 
@@ -239,7 +255,7 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
     - **Settle Hold invoices by Order ID**
     
       ```bash
-curl -X POST http://localhost:3000/api/settle-holdinvoices-by-order \
+     curl -X POST http://localhost:3000/api/settle-holdinvoices-by-order \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer $TAKER_TOKEN" \
      -d '{"orderId": 365}'
