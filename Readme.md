@@ -157,6 +157,7 @@ Pay close attention to your postgres setup now as it can be a pain to debug late
       export TAKER_TOKEN=
       ```
 Everythhing after this will require a lightning node.
+
 5. **Running Test Curl Commands:**
 
     Once you've set up the database and tables, you can use curl commands to interact with your API for testing purposes. Here are some example commands:
@@ -253,8 +254,6 @@ Everythhing after this will require a lightning node.
         "orderId": 183
       }'
       ```
-
-
 
     - **Settle Hold invoices by Order ID**
     
