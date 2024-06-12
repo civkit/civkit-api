@@ -1,5 +1,5 @@
 ## Civkit API
-This is a an escrow/chat API using c-lightning for hold invoices, integrated with a seperate chat that allows a civkit node runner to manage the escrow and backend of a peer to peer marketplace from a laptop. We have attempted to simplify some of the steps needed to handle this.
+This is a an escrow/chat API using c-lightning for hold invoices, integrated with a seperate chat that allows a civkit node runner to manage the escrow and backend of a peer to peer marketplace from a laptop. We have attempted to simplify some of the steps needed to handle this. This code is experimental and not production ready. We welcome contributors.
 
 What this code does
 - create hold invoices
