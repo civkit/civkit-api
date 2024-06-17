@@ -6,7 +6,6 @@ import pkg from 'pg';
 import { retrievePayoutInvoice } from './payoutService.js';
 import { createPayout } from './payoutService.js';
 //import { updatePayoutStatus } from './orderService.js';
-
 const { Pool } = pkg;
 
 config(); // This line configures dotenv to load the environment variables
@@ -725,6 +724,121 @@ async function settleHoldInvoices(orderId) {
   }
 }
 
+async function generateInvoice(amount_msat, description, label) {
+  const data = {
+      amount_msat,  // Make sure this is in millisatoshis and the value is correct
+      label,        // Unique identifier for the invoice
+      description,  // Description for the invoice
+      cltv: 770     // Ensure this CLTV value is accepted by your Lightning service
+  };
+
+  // Log the request data for debugging purposes
+  console.log('Sending data to generate invoice:', data);
+
+  try {
+      const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
+          method: 'POST',
+          headers: {
+              'Accept': 'application/json',
+              'Rune': MY_RUNE,
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data),
+          agent: new https.Agent({ rejectUnauthorized: false }),
+      });
+
+      // Read and log the full response body for debugging
+      const responseBody = await response.text();
+      console.log('Received response body:', responseBody);
+
+      if (!response.ok) {
+          // Log detailed error message before throwing
+          console.error(`HTTP Error: ${response.status} with body: ${responseBody}`);
+          throw new Error(`HTTP Error: ${response.status}`);
+      }
+
+      const invoiceData = JSON.parse(responseBody);
+      if (!invoiceData.bolt11) {
+          console.error('Response missing bolt11:', invoiceData);
+          throw new Error('Bolt11 is missing in the response');
+      }
+
+      // Log the successful invoice data retrieval
+      console.log('Received invoice data:', invoiceData);
+
+      return invoiceData;
+  } catch (error) {
+      // Log and rethrow the error to be handled or logged further up the call stack
+      console.error('Error in generating Bolt11 invoice:', error);
+      throw error;
+  }
+}
+
+// services/invoiceService.js
+
+// services/invoiceService.js
+
+export const checkInvoiceStatus = async (payment_hash) => {
+  try {
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payment_hash }), // Ensure the request body is correct
+      agent: new https.Agent({ rejectUnauthorized: false }),
+    });
+
+    if (!response.ok) {
+      const responseBody = await response.text();
+      console.error(`HTTP Error: ${response.status} with body: ${responseBody}`);
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    const invoiceList = await response.json();
+    const invoice = invoiceList.invoices.find(inv => inv.payment_hash === payment_hash);
+
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+
+    return invoice.status === 'paid';
+  } catch (error) {
+    console.error('Error checking invoice status:', error);
+    throw error;
+  }
+};
+
+
+// services/invoiceService.js
+
+const checkInvoicePayment = async (payment_hash) => {
+  try {
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice/${payment_hash}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': MY_RUNE,
+        'Content-Type': 'application/json',
+      },
+      agent: new https.Agent({ rejectUnauthorized: false }),
+    });
+
+    if (!response.ok) {
+      const responseBody = await response.text();
+      console.error(`HTTP Error: ${response.status} with body: ${responseBody}`);
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    const invoiceData = await response.json();
+    return invoiceData.settled;
+  } catch (error) {
+    console.error('Error checking invoice payment:', error);
+    throw error;
+  }
+};
 
 
 export {
@@ -745,5 +859,7 @@ export {
   createChatroom,
   settleHoldInvoices, // Add this to the export statement
   updateOrderStatus,  // Add this to the export statement
-  getHoldInvoicesByOrderId  // Add this to the export statement
+  getHoldInvoicesByOrderId,
+  generateInvoice,
+  checkInvoicePayment  // Add this to the export statement
 };

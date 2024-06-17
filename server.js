@@ -15,9 +15,9 @@ import {
   settleHoldInvoicesByOrderIdService,
   checkInvoicesAndCreateChatroom,
   createChatroom,
-  settleHoldInvoices
+  settleHoldInvoices,
 } from './services/invoiceService.js';
-import { registerUser, authenticateUser } from './services/userService.js';
+import { registerUser, authenticateUser,   pollAndCompleteRegistration } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payouts.js';
 import settleRoutes from './routes/settleRoutes.js';
@@ -38,16 +38,40 @@ app.use(cors({
   allowedHeaders: 'Content-Type,Authorization',
 }));
 
-// User Registration
+// Adjust the API endpoint to use the new registerUser function
+// server.js or wherever your endpoints are defined
+// server.js or wherever your endpoints are defined
 app.post('/api/register', async (req, res) => {
+  const { username, password } = req.body;
+
   try {
-    const { username, password } = req.body;
     const user = await registerUser(username, password);
-    res.status(201).json({ message: 'User registered successfully', user });
+    res.status(201).json({
+      message: 'Registration initiated, please pay the invoice to complete registration.',
+      user: {
+        id: user.id,
+        username: user.username,
+        created_at: user.created_at,
+        invoice: user.invoice
+      },
+      invoice: user.invoice  // Display the invoice prominently for clarity
+    });
   } catch (error) {
     res.status(500).json({ message: 'Registration failed', error: error.message });
   }
 });
+
+// server.js
+
+// Call this function periodically
+setInterval(async () => {
+  try {
+    await pollAndCompleteRegistration();
+  } catch (error) {
+    console.error('Error during registration polling:', error);
+  }
+}, 20000); // 1 minute interval
+
 
 // User Login
 app.post('/api/login', async (req, res) => {
@@ -263,3 +287,13 @@ app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+// Call this function periodically
+setInterval(async () => {
+  try {
+    await pollAndCompleteRegistration();
+  } catch (error) {
+    console.error('Error during registration polling:', error);
+  }
+}, 20000); // 20 seconds interval
