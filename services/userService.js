@@ -1,10 +1,11 @@
 // services/userService.js
 import bcrypt from 'bcrypt';
+import fs from 'fs';
+import path from 'path';
 import { pool } from '../config/db.js';
-import { generateInvoice, checkInvoicePayment } from './invoiceService.js';  // Assuming these functions are in invoiceService.js
+import { generateInvoice, checkInvoicePayment } from './invoiceService.js';
+import { exec } from 'child_process';
 
-// Modified Register User to handle npub and invoice creation
-// Adjust the registerUser function to handle npub and invoice generation
 // Register User
 export const registerUser = async (username, password) => {
   // Hash the password
@@ -38,26 +39,23 @@ export const registerUser = async (username, password) => {
   }
 };
 
-
 // Finalize Registration after verifying payment
-export const finalizeRegistration = async (npub) => {
+export const finalizeRegistration = async (username) => {
   // Check if the invoice is paid
-  const isPaid = await checkInvoicePayment(npub);  // Implement this function based on how you track paid invoices
+  const user = await getUserByUsername(username);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  const isPaid = await checkInvoicePayment(user.payment_hash); // Assuming payment_hash is used
 
   if (!isPaid) {
     throw new Error('Invoice payment not verified');
   }
 
-  // Update user status to 'active' after payment verification
-  const query = 'UPDATE users SET status = $1 WHERE npub = $2 RETURNING *';
-  const values = ['active', npub];
-
-  try {
-    const { rows } = await pool.query(query, values);
-    return rows[0];
-  } catch (error) {
-    throw new Error('Failed to finalize registration: ' + error.message);
-  }
+  // Update user status to 'complete' after payment verification
+  const updatedUser = await updateUserStatus(username, 'complete');
+  return updatedUser;
 };
 
 // Authenticate User
@@ -79,24 +77,76 @@ export const authenticateUser = async (username, password) => {
   }
 };
 
-
+// Update User Status and Add to Whitelist
 export const updateUserStatus = async (username, status) => {
-  const query = 'UPDATE users SET status = $1 WHERE username = $2 RETURNING *';
+  const query = 'UPDATE users SET status = $1 WHERE username = $2 AND status != $1 RETURNING *';
   const values = [status, username];
 
   try {
     const { rows } = await pool.query(query, values);
-    return rows[0];
+    if (rows.length === 0) {
+      console.log(`User ${username} already has status ${status}, skipping update.`);
+      return null; // No update was made
+    }
+
+    const updatedUser = rows[0];
+
+    if (status === 'complete') {
+      // Add the username (npub) to the pubkey_whitelist
+      await addPubkeyToWhitelist(username);
+    }
+
+    return updatedUser;
   } catch (error) {
     console.error('Error updating user status:', error);
     throw new Error('User status update failed');
   }
 };
 
-import { checkInvoiceStatus } from './invoiceService.js';
+// Add pubkey to whitelist
+const addPubkeyToWhitelist = async (pubkey) => {
+  try {
+    const configPath = '/home/dave/nostr-rs-relay/config.toml';
+    const configContent = fs.readFileSync(configPath, 'utf-8');
+    const whitelistRegex = /pubkey_whitelist\s*=\s*\[(.*?)\]/s;
+    const match = configContent.match(whitelistRegex);
 
+    if (match) {
+      let whitelist = match[1].trim();
+      const pubkeyArray = whitelist.split(',').map(key => key.trim().replace(/"/g, ''));
+      if (!pubkeyArray.includes(pubkey)) {
+        const updatedWhitelist = `${whitelist}, "${pubkey}"`;
+
+        const updatedConfig = configContent.replace(whitelistRegex, `pubkey_whitelist = [${updatedWhitelist}]`);
+        fs.writeFileSync(configPath, updatedConfig, 'utf-8');
+        console.log(`Added ${pubkey} to pubkey_whitelist in config.toml`);
+
+        // Restart the relay service
+        exec('sudo systemctl restart nostr-rs-relay', (error, stdout, stderr) => {
+          if (error) {
+            console.error(`Error restarting relay: ${error}`);
+            return;
+          }
+          if (stderr) {
+            console.error(`Stderr from relay restart: ${stderr}`);
+            return;
+          }
+          console.log(`Relay restarted successfully: ${stdout}`);
+        });
+      } else {
+        console.log(`${pubkey} is already in the pubkey_whitelist.`);
+      }
+    } else {
+      console.error('pubkey_whitelist not found in config.toml');
+    }
+  } catch (error) {
+    console.error('Error adding pubkey to whitelist:', error);
+    throw new Error('Failed to update whitelist');
+  }
+};
+
+// Poll and Complete Registration
 export const pollAndCompleteRegistration = async () => {
-  // Fetch all users with pending registration (assume status is 'pending')
   const query = 'SELECT username, payment_hash FROM users WHERE status = $1';
   const values = ['pending'];
 
@@ -105,10 +155,10 @@ export const pollAndCompleteRegistration = async () => {
 
     for (const user of rows) {
       try {
-        const isPaid = await checkInvoiceStatus(user.payment_hash);
+        const invoiceStatus = await checkInvoicePayment(user.payment_hash);
 
         // If invoice is paid, update user status to 'complete'
-        if (isPaid) {
+        if (invoiceStatus) {
           await updateUserStatus(user.username, 'complete');
           console.log(`User ${user.username} registration completed.`);
         }
@@ -122,5 +172,16 @@ export const pollAndCompleteRegistration = async () => {
   }
 };
 
-// Assume existing authenticateUser function remains for password-based users
-// If migrating fully to npub-based auth, this function would need to be adapted or removed.
+// Helper function to get user by username
+const getUserByUsername = async (username) => {
+  const query = 'SELECT * FROM users WHERE username = $1';
+  const values = [username];
+
+  try {
+    const { rows } = await pool.query(query, values);
+    return rows[0];
+  } catch (error) {
+    console.error('Error fetching user by username:', error);
+    throw new Error('Failed to fetch user');
+  }
+};

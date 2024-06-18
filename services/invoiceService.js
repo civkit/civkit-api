@@ -774,10 +774,6 @@ async function generateInvoice(amount_msat, description, label) {
   }
 }
 
-// services/invoiceService.js
-
-// services/invoiceService.js
-
 export const checkInvoiceStatus = async (payment_hash) => {
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
@@ -787,7 +783,7 @@ export const checkInvoiceStatus = async (payment_hash) => {
         'Rune': MY_RUNE,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ payment_hash }), // Ensure the request body is correct
+      body: JSON.stringify({ payment_hash }),
       agent: new https.Agent({ rejectUnauthorized: false }),
     });
 
@@ -797,48 +793,28 @@ export const checkInvoiceStatus = async (payment_hash) => {
       throw new Error(`HTTP Error: ${response.status}`);
     }
 
-    const invoiceList = await response.json();
-    const invoice = invoiceList.invoices.find(inv => inv.payment_hash === payment_hash);
-
-    if (!invoice) {
+    const data = await response.json();
+    if (data.invoices && data.invoices.length > 0) {
+      return data.invoices[0];
+    } else {
       throw new Error('Invoice not found');
     }
-
-    return invoice.status === 'paid';
   } catch (error) {
     console.error('Error checking invoice status:', error);
     throw error;
   }
 };
 
-
-// services/invoiceService.js
-
 const checkInvoicePayment = async (payment_hash) => {
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice/${payment_hash}`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Rune': MY_RUNE,
-        'Content-Type': 'application/json',
-      },
-      agent: new https.Agent({ rejectUnauthorized: false }),
-    });
-
-    if (!response.ok) {
-      const responseBody = await response.text();
-      console.error(`HTTP Error: ${response.status} with body: ${responseBody}`);
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
-
-    const invoiceData = await response.json();
-    return invoiceData.settled;
+    const invoice = await checkInvoiceStatus(payment_hash);
+    return invoice.status === 'paid';
   } catch (error) {
     console.error('Error checking invoice payment:', error);
     throw error;
   }
 };
+
 
 
 export {
