@@ -103,7 +103,54 @@ export const updateUserStatus = async (username, status) => {
   }
 };
 
-// Add pubkey to whitelist
+const stopContainer = (callback) => {
+  exec('podman stop nostr-relay', (error, stdout, stderr) => {
+    if (error && !stderr.includes('no such container')) {
+      console.error(`Error stopping relay: ${error}`);
+      return callback(error);
+    }
+    console.log(`Relay stopped successfully: ${stdout}`);
+    callback(null);
+  });
+};
+
+const removeContainer = (callback) => {
+  exec('podman rm nostr-relay', (error, stdout, stderr) => {
+    if (error && !stderr.includes('no such container')) {
+      console.error(`Error removing relay: ${error}`);
+      return callback(error);
+    }
+    console.log(`Relay removed successfully: ${stdout}`);
+    callback(null);
+  });
+};
+
+const runContainer = () => {
+  exec('podman run -d --rm -p 7000:8080 --user=100:100 -v /home/dave/nostr-rs-relay/data:/usr/src/app/db:Z -v /home/dave/nostr-rs-relay/config.toml:/usr/src/app/config.toml:ro,Z --name nostr-relay nostr-rs-relay:latest', (error, stdout, stderr) => {
+    if (error) {
+      console.error(`Error starting relay: ${error}`);
+      return;
+    }
+    if (stderr) {
+      console.error(`Stderr from relay start: ${stderr}`);
+      return;
+    }
+    console.log(`Relay started successfully: ${stdout}`);
+  });
+};
+
+const restartRelay = () => {
+  stopContainer((stopError) => {
+    if (!stopError || stopError.message.includes('no such container')) {
+      removeContainer((removeError) => {
+        if (!removeError || removeError.message.includes('no such container')) {
+          runContainer();
+        }
+      });
+    }
+  });
+};
+
 const addPubkeyToWhitelist = async (pubkey) => {
   try {
     const configPath = '/home/dave/nostr-rs-relay/config.toml';
@@ -122,17 +169,7 @@ const addPubkeyToWhitelist = async (pubkey) => {
         console.log(`Added ${pubkey} to pubkey_whitelist in config.toml`);
 
         // Restart the relay service
-        exec('sudo systemctl restart nostr-rs-relay', (error, stdout, stderr) => {
-          if (error) {
-            console.error(`Error restarting relay: ${error}`);
-            return;
-          }
-          if (stderr) {
-            console.error(`Stderr from relay restart: ${stderr}`);
-            return;
-          }
-          console.log(`Relay restarted successfully: ${stdout}`);
-        });
+        restartRelay();
       } else {
         console.log(`${pubkey} is already in the pubkey_whitelist.`);
       }
