@@ -12,7 +12,7 @@ export const registerUser = async (username, password) => {
   const hashedPassword = await bcrypt.hash(password, 10);
 
   // Generate an invoice
-  const amount_msat = 1000; // Example: 1 satoshi as 1000 millisatoshis
+  const amount_msat = 10; // Example: 1 satoshi as 1000 millisatoshis
   const description = "Registration Fee";
   const label = `Registration_${username}_${Date.now()}`;
 

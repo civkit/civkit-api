@@ -23,9 +23,7 @@ import payoutsRoutes from './routes/payouts.js';
 import settleRoutes from './routes/settleRoutes.js';
 import { initializeNDK } from './config/ndkSetup.js';
 import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatService.js';
-import { query } from './config/db.js';
-
-config();
+import { query, pool } from './config/db.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -288,6 +286,25 @@ app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
   }
 });
 
+const checkAndUpdateInvoiceStatuses = async () => {
+  try {
+    const { rows: invoices } = await pool.query('SELECT * FROM users WHERE invoice_status = $1', ['unpaid']);
+
+    for (const invoice of invoices) {
+      const { payment_hash, id } = invoice;
+
+      const result = await holdInvoiceLookup(payment_hash);
+
+      if (result.status === 'paid') {
+        await pool.query('UPDATE users SET invoice_status = $1 WHERE id = $2', ['paid', id]);
+        console.log(`Invoice for user ID ${id} marked as paid`);
+      }
+    }
+  } catch (error) {
+    console.error('Error checking and updating invoice statuses:', error);
+  }
+};
+
 
 // Call this function periodically
 setInterval(async () => {
@@ -297,3 +314,27 @@ setInterval(async () => {
     console.error('Error during registration polling:', error);
   }
 }, 20000); // 20 seconds interval
+
+app.post('/api/get-invoice', async (req, res) => {
+  const { username } = req.body;
+
+  if (!username) {
+    return res.status(400).json({ error: 'Username is required' });
+  }
+
+  try {
+    const query = 'SELECT invoice, payment_hash, status FROM users WHERE username = $1';
+    const values = [username];
+    const { rows } = await pool.query(query, values);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { invoice, payment_hash, status } = rows[0];
+    res.status(200).json({ invoice, payment_hash, status });
+  } catch (error) {
+    console.error('Error fetching invoice:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
