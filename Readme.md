@@ -85,6 +85,10 @@ This guide walks you through setting up a PostgreSQL database and tables to stor
         password VARCHAR(255) NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    ALTER TABLE users ALTER COLUMN username TYPE VARCHAR(64);
+    ALTER TABLE users ALTER COLUMN invoice TYPE VARCHAR(9999);
+    ALTER TABLE users ALTER COLUMN status TYPE VARCHAR(64);
+    ALTER TABLE users ALTER COLUMN payment_hash TYPE VARCHAR(255);
 
     CREATE TABLE chats (
         chat_id SERIAL PRIMARY KEY,
@@ -121,7 +125,7 @@ Pay close attention to your postgres setup now as it can be a pain to debug late
     
       ```bash
       curl -X POST http://localhost:3000/api/register -H "Content-Type: application/json" -d '{
-        "username": "maker",
+        "username": "6b2ab9c2b202923b738db40f272ec203bc675d2410d0aa85feb9026650165464",
         "password": "makerpassword"
       }'
       ```
