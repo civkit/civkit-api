@@ -1,11 +1,9 @@
-// Import statements for ES Modules
 import fetch from 'node-fetch';
 import https from 'https';
 import { config } from 'dotenv';
 import pkg from 'pg';
 import { retrievePayoutInvoice } from './payoutService.js';
 import { createPayout } from './payoutService.js';
-//import { updatePayoutStatus } from './orderService.js';
 const { Pool } = pkg;
 
 config(); // This line configures dotenv to load the environment variables
@@ -53,7 +51,7 @@ async function postHoldinvoice(totalAmountMsat, label, description) {
   }
 }
 
-
+// looks up holdinvoices and returns status
 async function holdInvoiceLookup(payment_hash) {
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
@@ -80,7 +78,7 @@ async function holdInvoiceLookup(payment_hash) {
 }
 
 
-
+// syncs the invoice status from lightning with the database
 async function syncInvoicesWithNode() {
   const agent = new https.Agent({ rejectUnauthorized: false });
 
@@ -178,7 +176,8 @@ async function syncInvoicesWithNode() {
   }
 }
 
-
+// syncs payouts with node. 
+// not sure where this is used so worth investigating if still needed or replaced by above
 async function syncPayoutsWithNode() {
   const agent = new https.Agent({
     rejectUnauthorized: false
@@ -237,7 +236,7 @@ async function generateBolt11Invoice(amount_msat, label, description, type, prem
     premium
   };
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, { // Changed to regular invoice endpoint
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, { 
       method: 'POST',
       headers: {
         'Accept': 'application/json',
@@ -344,7 +343,7 @@ async function handleFiatReceived(orderId) {
 
 async function payInvoice(lnInvoice) {
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/pay`, { // Changed to pay endpoint
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/pay`, { 
       method: 'POST',
       headers: {
         'Accept': 'application/json',
@@ -407,66 +406,6 @@ async function settleHoldInvoice(lnInvoice) {
   }
 }
 
-async function generateAndSettleHoldInvoice(amount_msat, label, description, type, premium) {
-  const data = {
-    amount_msat: parseInt(amount_msat),
-    label,
-    description,
-    cltv: 770,
-    type,
-    premium
-  };
-
-  try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Rune': MY_RUNE,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-      agent: new https.Agent({ rejectUnauthorized: false }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
-
-    const invoiceData = await response.json();
-    if (!invoiceData.bolt11) {
-      console.error('Response missing bolt11:', invoiceData);
-      throw new Error('bolt11 is missing in the response');
-    }
-
-    const { payment_hash } = invoiceData;
-    console.log('Generated hold invoice:', invoiceData);
-
-    const settleResponse = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Rune': MY_RUNE,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ payment_hash }),
-      agent: new https.Agent({ rejectUnauthorized: false }),
-    });
-
-    if (!settleResponse.ok) {
-      throw new Error(`HTTP Error: ${settleResponse.status}`);
-    }
-
-    const settleData = await settleResponse.json();
-    console.log('Settled hold invoice:', settleData);
-
-    return { invoiceData, settleData };
-
-  } catch (error) {
-    console.error('Error in generating and settling hold invoice:', error);
-    throw error;
-  }
-}
 
 async function checkAndProcessPendingPayouts() {
   const client = await pool.connect();
@@ -548,8 +487,9 @@ const settleHoldInvoicesByOrderIdService = async (orderId) => {
   }
 };
 
-// Add these new functions at the appropriate place in your existing invoiceService.js
 
+// generic chat functions that are not currently being used.
+// placeholders for alerting users when their chatroom is open
 async function notifyUsers(orderId) {
   console.log(`Chatroom is available for Order ID: ${orderId} for both Maker and Taker`);
 }
@@ -564,6 +504,7 @@ async function handleChatroomTrigger(orderId) {
   return chatId;
 }
 
+// chatroom code that hooks into the chat app and returns the chatroom when invoices are marked as paid for the orderId
 
 const CHAT_APP_URL = 'http://localhost:3456';
 async function checkInvoicesAndCreateChatroom(orderId) {
@@ -829,13 +770,13 @@ export {
   checkAndProcessPendingPayouts,
   updatePayoutStatus,
   settleHoldInvoiceByHash,
-  payInvoice, // Export payInvoice
+  payInvoice, 
   settleHoldInvoicesByOrderIdService,
   checkInvoicesAndCreateChatroom,
   createChatroom,
-  settleHoldInvoices, // Add this to the export statement
-  updateOrderStatus,  // Add this to the export statement
+  settleHoldInvoices, 
+  updateOrderStatus,  
   getHoldInvoicesByOrderId,
   generateInvoice,
-  checkInvoicePayment  // Add this to the export statement
+  checkInvoicePayment  
 };

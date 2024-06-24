@@ -1,7 +1,7 @@
-// controllers/orderController.js
 import { addOrderAndGenerateInvoice, processTakeOrder, generateTakerInvoice, checkAndUpdateOrderStatus } from '../services/orderService.js';
 import { pool } from '../config/db.js';
 
+//
 export async function createOrder(req, res) {
     try {
         const customer_id = req.user.id;  // Extract customer_id from logged-in user

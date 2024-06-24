@@ -1,4 +1,3 @@
-// services/userService.js
 import bcrypt from 'bcrypt';
 import fs from 'fs';
 import path from 'path';
@@ -125,6 +124,7 @@ const removeContainer = (callback) => {
   });
 };
 
+// alot of hardcodes here 
 const runContainer = () => {
   exec('podman run -d --rm -p 7000:8080 --user=100:100 -v /home/dave/nostr-rs-relay/data:/usr/src/app/db:Z -v /home/dave/nostr-rs-relay/config.toml:/usr/src/app/config.toml:ro,Z --name nostr-relay nostr-rs-relay:latest', (error, stdout, stderr) => {
     if (error) {

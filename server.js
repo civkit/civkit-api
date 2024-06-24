@@ -1,8 +1,5 @@
-// server.js
 import express from 'express';
-import dotenv from 'dotenv';
 import cors from 'cors';
-import { config } from 'dotenv';
 import { authenticateJWT } from './middleware/authMiddleware.js';
 import { generateToken } from './utils/auth.js';
 import {
@@ -11,15 +8,11 @@ import {
   syncInvoicesWithNode,
   syncPayoutsWithNode,
   handleFiatReceived,
-  settleHoldInvoiceByHash,
   settleHoldInvoicesByOrderIdService,
-  checkInvoicesAndCreateChatroom,
-  createChatroom,
-  settleHoldInvoices,
 } from './services/invoiceService.js';
 import { registerUser, authenticateUser,   pollAndCompleteRegistration } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
-import payoutsRoutes from './routes/payouts.js';
+import payoutsRoutes from './routes/payoutRoutes.js';
 import settleRoutes from './routes/settleRoutes.js';
 import { initializeNDK } from './config/ndkSetup.js';
 import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatService.js';
@@ -36,9 +29,6 @@ app.use(cors({
   allowedHeaders: 'Content-Type,Authorization',
 }));
 
-// Adjust the API endpoint to use the new registerUser function
-// server.js or wherever your endpoints are defined
-// server.js or wherever your endpoints are defined
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
 
@@ -52,23 +42,21 @@ app.post('/api/register', async (req, res) => {
         created_at: user.created_at,
         invoice: user.invoice
       },
-      invoice: user.invoice  // Display the invoice prominently for clarity
+      invoice: user.invoice  // Display the invoice to regidster
     });
   } catch (error) {
     res.status(500).json({ message: 'Registration failed', error: error.message });
   }
 });
 
-// server.js
-
-// Call this function periodically
+// polls invoices to see if registration is complete
 setInterval(async () => {
   try {
     await pollAndCompleteRegistration();
   } catch (error) {
     console.error('Error during registration polling:', error);
   }
-}, 20000); // 1 minute interval
+}, 20000); // 20 seconds
 
 
 // User Login
@@ -83,7 +71,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Protected Routes
 app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
   try {
     const { amount_msat, label, description } = req.body;
@@ -103,7 +90,6 @@ app.post('/api/holdinvoicelookup', authenticateJWT, async (req, res) => {
   }
 });
 
-// Use only /api/orders for all order-related operations
 app.use('/api/orders', authenticateJWT, orderRoutes);
 app.use('/api/payouts', authenticateJWT, payoutsRoutes);
 
@@ -154,7 +140,6 @@ initializeNDK().then(() => {
   });
 });
 
-// New endpoint to check and update accepted invoices
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
     await checkAndUpdateAcceptedInvoices();
@@ -206,7 +191,7 @@ app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
 
 app.use('/api/settle', settleRoutes);
 
-// New endpoint: Get all orders
+// Get all orders
 app.get('/api/orders', authenticateJWT, async (req, res) => {
   try {
     const result = await query('SELECT * FROM orders');
@@ -216,7 +201,7 @@ app.get('/api/orders', authenticateJWT, async (req, res) => {
   }
 });
 
-// New endpoint: Get order by ID
+//Get order by ID
 app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
@@ -230,7 +215,7 @@ app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
   }
 });
 
-// New endpoint: Get invoice by order ID
+// Get invoice by order ID
 app.get('/api/invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
@@ -244,7 +229,6 @@ app.get('/api/invoice/:orderId', authenticateJWT, async (req, res) => {
   }
 });
 
-// In your routes file
 app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
@@ -258,7 +242,6 @@ app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
   }
 });
 
-// New endpoint to get the full invoice by order ID
 app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
@@ -272,7 +255,7 @@ app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
   }
 });
 
-// New endpoint to lookup full invoice by payment hash
+// endpoint to lookup full invoice by payment hash
 app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
   const { payment_hash } = req.body;
   try {
@@ -286,24 +269,6 @@ app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
   }
 });
 
-const checkAndUpdateInvoiceStatuses = async () => {
-  try {
-    const { rows: invoices } = await pool.query('SELECT * FROM users WHERE invoice_status = $1', ['unpaid']);
-
-    for (const invoice of invoices) {
-      const { payment_hash, id } = invoice;
-
-      const result = await holdInvoiceLookup(payment_hash);
-
-      if (result.status === 'paid') {
-        await pool.query('UPDATE users SET invoice_status = $1 WHERE id = $2', ['paid', id]);
-        console.log(`Invoice for user ID ${id} marked as paid`);
-      }
-    }
-  } catch (error) {
-    console.error('Error checking and updating invoice statuses:', error);
-  }
-};
 
 
 // Call this function periodically

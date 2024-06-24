@@ -1,4 +1,3 @@
-// config/ndkSetup.js
 import NDK, { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import readline from 'readline';

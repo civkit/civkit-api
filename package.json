@@ -22,5 +22,9 @@
     "openpgp": "^5.11.1",
     "pg": "^8.11.5",
     "websocket-polyfill": "^1.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
   }
 }

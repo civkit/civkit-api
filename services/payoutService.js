@@ -1,8 +1,8 @@
 import { config } from 'dotenv';
-config(); // Make sure this is called before using process.env variables
+config();
 
 async function createPayout(order_id, ln_invoice, status = 'pending') {
-    const db = await import('../config/db.js');  // Dynamically import the CommonJS module
+    const db = await import('../config/db.js'); 
 
     // Validate order_id, check if it exists and is eligible for payout
     const order = await db.query('SELECT * FROM orders WHERE order_id = $1', [order_id]);
@@ -17,7 +17,7 @@ async function createPayout(order_id, ln_invoice, status = 'pending') {
 
 
 async function retrievePayoutInvoice(orderId) {
-    const db = await import('../config/db.js');  // Dynamically import the CommonJS module
+    const db = await import('../config/db.js');  
 
     try {
         // Retrieve the payout invoice from the database based on the order ID

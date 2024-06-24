@@ -1,7 +1,6 @@
-// src/db/db.js
-// src/db/db.js
 import pg from 'pg';
 const { Pool } = pg;
+
 // Configure database using environment variables
 const pool = new Pool({
     user: process.env.DB_USER,       // e.g., 'postgres'
@@ -30,5 +29,4 @@ const query = async (text, params) => {
     }
 };
 
-// Export both the pool for direct access and the query function for convenience
 export { pool, query };
