@@ -1,4 +1,3 @@
-// routes/orderRoutes.js
 import express from 'express';
 import { createOrder, takeOrder } from '../controllers/orderController.js';
 import { settleHoldInvoicesByOrderIdService } from '../services/invoiceService.js';

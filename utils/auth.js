@@ -1,6 +1,7 @@
-// utils/auth.js
 import jwt from 'jsonwebtoken';
 import 'dotenv/config'
+
+
 const SECRET_KEY = process.env.JWT_SECRET;
 // Generate JWT Token
 export const generateToken = (user) => {

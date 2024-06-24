@@ -1,4 +1,3 @@
-// middleware/authMiddleware.js
 import { verifyToken } from '../utils/auth.js';
 
 export const authenticateJWT = (req, res, next) => {
@@ -9,7 +8,7 @@ export const authenticateJWT = (req, res, next) => {
 
     try {
       const user = verifyToken(token);
-      req.user = user; // This now includes id, username, and customer_id
+      req.user = user; // This includes id, username, and customer_id
       next();
     } catch (error) {
       return res.sendStatus(403);
