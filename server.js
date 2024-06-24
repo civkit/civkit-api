@@ -20,6 +20,7 @@ import { query, pool } from './config/db.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+import submitToMainstayRoute from './routes/submitToMainstay.js';
 
 app.use(express.json());
 
@@ -303,3 +304,5 @@ app.post('/api/get-invoice', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+app.use('/api/submitToMainstay', submitToMainstayRoute);
