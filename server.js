@@ -17,6 +17,10 @@ import settleRoutes from './routes/settleRoutes.js';
 import { initializeNDK } from './config/ndkSetup.js';
 import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatService.js';
 import { query, pool } from './config/db.js';
+import dotenv from 'dotenv'
+import submitToMainstayRoutes from './routes/submitToMainstay.js';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +32,9 @@ app.use(cors({
   methods: 'GET,POST,PUT,DELETE',
   allowedHeaders: 'Content-Type,Authorization',
 }));
+
+
+
 
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
@@ -303,3 +310,5 @@ app.post('/api/get-invoice', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+app.use('/api', submitToMainstayRoutes);

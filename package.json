@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -12,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "@nostr-dev-kit/ndk": "^2.8.1",
+    "axios": "^1.7.2",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -25,6 +27,8 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "supertest": "^7.0.0"
+    "supertest": "^7.0.0",
+    "nodemon": "^2.0.22"  
+
   }
 }
