@@ -268,5 +268,15 @@ Everythhing after this will require a lightning node.
      -d '{"orderId": 365}'
       ```
 
+    - ** Mainstay commitment of user registration to blockchain **
+    ```bash
+    curl -X POST http://localhost:3000/api/submitToMainstay -H "Content-Type: application/json" -H "Authorization: Bearer $ESCROW_TOKEN" -d '{"username":"0dd6b589436d8261faba861f9a4df4b910f81c812cac7e0c402086bdcb7179a2"}'
+
+
+    {"response":"Commitment added","timestamp":1719285927879,"allowance":{"cost":5845857}}d
+    ```
+
+
+
 
 This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.

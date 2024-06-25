@@ -1,9 +1,9 @@
 import express from 'express';
 import { submit } from '../controllers/submitToMainstayController.js';
+import { authenticateJWT } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// POST request to submit order details to Mainstay
-router.post('/', submit);
+router.post('/submitToMainstay', authenticateJWT, submit);
 
 export default router;
