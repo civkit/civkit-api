@@ -119,8 +119,8 @@ async function syncInvoicesWithNode() {
             const holdState = await holdInvoiceLookup(invoice.payment_hash);
             console.log(`Hold state for invoice with payment_hash ${invoice.payment_hash}:`, holdState);
 
-            if (holdState.state === 'accepted' || holdState.state === 'settled') {
-              newStatus = 'accepted';
+            if (holdState.state === 'ACCEPTED' || holdState.state === 'settled') {
+              newStatus = 'ACCEPTED';
             } else if (holdState.state === 'canceled') {
               newStatus = 'canceled';
             }
@@ -148,7 +148,7 @@ async function syncInvoicesWithNode() {
 
       for (const order_id in orderUpdates) {
         const statuses = orderUpdates[order_id];
-        const allHoldInvoices = statuses.filter(status => status === 'accepted').length === 2;
+        const allHoldInvoices = statuses.filter(status => status === 'ACCEPTED').length === 2;
         const fullInvoicePaid = statuses.includes('paid');
 
         if (allHoldInvoices && fullInvoicePaid) {
@@ -461,7 +461,7 @@ const settleHoldInvoicesByOrderIdService = async (orderId) => {
     // Fetch all hold invoices for the order
     const invoicesResult = await client.query(
       'SELECT payment_hash FROM invoices WHERE order_id = $1 AND invoice_type = $2 AND status = $3',
-      [orderId, 'hold', 'accepted']
+      [orderId, 'hold', 'ACCEPTED']
     );
 
     const settlePromises = invoicesResult.rows.map(async (invoice) => {
@@ -637,7 +637,7 @@ async function getHoldInvoicesByOrderId(orderId) {
   try {
     const result = await client.query(
       'SELECT payment_hash FROM invoices WHERE order_id = $1 AND invoice_type = $2 AND status = $3',
-      [orderId, 'hold', 'accepted']
+      [orderId, 'hold', 'ACCEPTED']
     );
 
     return result.rows.map(row => row.payment_hash);
@@ -670,7 +670,7 @@ async function generateInvoice(amount_msat, description, label) {
       amount_msat,  // Make sure this is in millisatoshis and the value is correct
       label,        // Unique identifier for the invoice
       description,  // Description for the invoice
-      cltv: 770     // Ensure this CLTV value is accepted by your Lightning service
+      cltv: 770     // Ensure this CLTV value is ACCEPTED by your Lightning service
   };
 
   // Log the request data for debugging purposes

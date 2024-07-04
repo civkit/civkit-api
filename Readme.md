@@ -132,7 +132,7 @@ Pay close attention to your postgres setup now as it can be a pain to debug late
     
       ```bash
       curl -X POST http://localhost:3000/api/login -H "Content-Type: application/json" -d '{
-        "username": "maker",
+        "username": "43b07235b2cc838f09d9d02f8b57f24768cb74a3177b7a054216874600e9a896",
         "password": "makerpassword"
       }'
       ```
@@ -198,7 +198,7 @@ Everythhing after this will require a lightning node.
     
       ```bash
       curl -X POST http://localhost:3000/api/sync-invoices \
-      -H "Authorization: Bearer $TAKER_TOKEN"
+      -H "Authorization: Bearer $MAKER_TOKEN"
       ```
 
     - **Submit a payout lightning invoice:**
@@ -268,12 +268,10 @@ Everythhing after this will require a lightning node.
      -d '{"orderId": 365}'
       ```
 
-    - ** Mainstay commitment of user registration to blockchain **
+    - **Mainstay commitment of user registration to blockchain**
     ```bash
     curl -X POST http://localhost:3000/api/submitToMainstay -H "Content-Type: application/json" -H "Authorization: Bearer $ESCROW_TOKEN" -d '{"username":"0dd6b589436d8261faba861f9a4df4b910f81c812cac7e0c402086bdcb7179a2"}'
-
-
-    {"response":"Commitment added","timestamp":1719285927879,"allowance":{"cost":5845857}}d
+    {"response":"Commitment added","timestamp":1719285927879,"allowance":{"cost":5845857}}
     ```
 
 
