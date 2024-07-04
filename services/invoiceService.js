@@ -149,7 +149,7 @@ async function syncInvoicesWithNode() {
       for (const order_id in orderUpdates) {
         const statuses = orderUpdates[order_id];
         const allHoldInvoices = statuses.filter(status => status === 'ACCEPTED').length === 2;
-        const fullInvoicePaid = statuses.includes('paid');
+        const fullInvoicePaid = statuses.includes('ACCEPTED');
 
         if (allHoldInvoices && fullInvoicePaid) {
           await client.query(
@@ -606,7 +606,6 @@ async function checkInvoicesAndCreateChatroom(orderId) {
     throw error;
   }
 }
-
 async function createChatroom(orderId) {
   return `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
 }
