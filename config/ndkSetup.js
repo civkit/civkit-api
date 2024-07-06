@@ -12,10 +12,10 @@ await (async () => {
   const question = (query) => new Promise((resolve) => {
     rl.question(query, resolve);
   });
-  const answer = await question('Enter relay URLs (separated by commas (if empty ws://localhost:8080 will be used)):');
-  let relayUrls = answer.trim().split(',');
+  // const answer = await question('Enter relay URLs (separated by commas (if empty ws://localhost:8080 will be used)):');
+  // let relayUrls = answer.trim().split(',');
 
-  our_relays = relayUrls.length === 1 && relayUrls[0] === "" ? our_relays : relayUrls;
+  // our_relays = relayUrls.length === 1 && relayUrls[0] === "" ? our_relays : relayUrls;
   console.log('Relay URLs:', our_relays);
   rl.close();
 })();
