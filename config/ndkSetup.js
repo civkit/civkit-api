@@ -1,13 +1,26 @@
 import NDK, { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
-import dotenv from 'dotenv';
+import readline from 'readline';
 
-dotenv.config();
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
 
-const privateKeyFilePath = process.env.PRIVATE_KEY_FILE_PATH || './.NDK_private_key';
-let our_relays = process.env.RELAY_URLS ? process.env.RELAY_URLS.split(',') : ["ws://localhost:8080"];
+let our_relays = ["ws://localhost:8080"];
+await (async () => {
+  const question = (query) => new Promise((resolve) => {
+    rl.question(query, resolve);
+  });
+  // const answer = await question('Enter relay URLs (separated by commas (if empty ws://localhost:8080 will be used)):');
+  // let relayUrls = answer.trim().split(',');
 
-console.log('Relay URLs:', our_relays);
+  // our_relays = relayUrls.length === 1 && relayUrls[0] === "" ? our_relays : relayUrls;
+  console.log('Relay URLs:', our_relays);
+  rl.close();
+})();
+
+const privateKeyFilePath = './.NDK_private_key';
 
 function initializeSignerSync() {
   let privateKey;
@@ -34,10 +47,4 @@ export async function initializeNDK() {
 
   const user = await ndk.signer.user();
   console.log('\x1b[36m' + 'Our Pubkey: ' + user.pubkey + '\x1b[0m');
-
-  // Set the escrow runner's npub in the environment variables
-  process.env.ESCROW_NPUB = user.pubkey;
 }
-
-// Initialize NDK
-initializeNDK().catch(console.error);

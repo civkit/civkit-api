@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 .env
 .NDK_private_key
 
