@@ -1,7 +1,7 @@
 import { config } from 'dotenv';
 config();
 
-async function createPayout(order_id, ln_invoice, status = 'pending') {
+async function createPayout(order_id: any, ln_invoice: any, status = 'pending') {
     const db = await import('../config/db.js'); 
 
     // Validate order_id, check if it exists and is eligible for payout
@@ -16,7 +16,7 @@ async function createPayout(order_id, ln_invoice, status = 'pending') {
 }
 
 
-async function retrievePayoutInvoice(orderId) {
+async function retrievePayoutInvoice(orderId: any) {
     const db = await import('../config/db.js');  
 
     try {
@@ -29,6 +29,7 @@ async function retrievePayoutInvoice(orderId) {
         }
 
         // Extract the Lightning invoice from the database result
+        // @ts-expect-error TS(2339): Property 'ln_invoice' does not exist on type 'any[... Remove this comment to see the full error message
         const ln_invoice = result.rows[0].ln_invoice;
         
         return ln_invoice;

@@ -9,7 +9,7 @@ const rl = readline.createInterface({
 
 let our_relays = ["ws://localhost:8080"];
 await (async () => {
-  const question = (query) => new Promise((resolve) => {
+  const question = (query: any) => new Promise((resolve) => {
     rl.question(query, resolve);
   });
   // const answer = await question('Enter relay URLs (separated by commas (if empty ws://localhost:8080 will be used)):');
@@ -30,6 +30,7 @@ function initializeSignerSync() {
   } else {
     const generated = NDKPrivateKeySigner.generate();
     privateKey = generated.privateKey;
+    // @ts-expect-error TS(2345): Argument of type 'string | undefined' is not assig... Remove this comment to see the full error message
     writeFileSync(privateKeyFilePath, privateKey);
     console.log('New private key generated and saved.');
   }
@@ -45,6 +46,7 @@ export async function initializeNDK() {
   });
   await ndk.connect();
 
+  // @ts-expect-error TS(2532): Object is possibly 'undefined'.
   const user = await ndk.signer.user();
   console.log('\x1b[36m' + 'Our Pubkey: ' + user.pubkey + '\x1b[0m');
 }

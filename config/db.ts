@@ -16,7 +16,7 @@ const pool = new Pool({
  * @param params Parameters for the SQL query.
  * @returns A promise that resolves to the query result.
  */
-const query = async (text, params) => {
+const query = async (text: any, params: any) => {
     const start = Date.now();
     try {
         const res = await pool.query(text, params);

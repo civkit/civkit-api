@@ -1,6 +1,6 @@
 import { verifyToken } from '../utils/auth.js';
 
-export const authenticateJWT = (req, res, next) => {
+export const authenticateJWT = (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
 
   if (authHeader) {
