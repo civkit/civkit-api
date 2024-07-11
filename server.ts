@@ -52,6 +52,7 @@ app.post('/api/register', async (req, res) => {
       invoice: user.invoice  // Display the invoice to regidster
     });
   } catch (error) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Registration failed', error: error.message });
   }
 });
@@ -74,6 +75,7 @@ app.post('/api/login', async (req, res) => {
     const token = generateToken(user);
     res.json({ token });
   } catch (error) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(401).json({ message: 'Login failed', error: error.message });
   }
 });
@@ -84,6 +86,7 @@ app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
     const result = await postHoldinvoice(amount_msat, label, description);
     res.json(result);
   } catch (error) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ error: error.message });
   }
 });
@@ -93,6 +96,7 @@ app.post('/api/holdinvoicelookup', authenticateJWT, async (req, res) => {
     const result = await holdInvoiceLookup(req.body.payment_hash);
     res.json(result);
   } catch (error) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ error: error.message });
   }
 });
@@ -106,6 +110,7 @@ app.post('/api/sync-invoices', authenticateJWT, async (req, res) => {
     res.status(200).json({ message: 'Invoices synchronized successfully' });
   } catch (error) {
     console.error('Failed to sync invoices:', error);
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Failed to synchronize invoices', error: error.message });
   }
 });
@@ -115,6 +120,7 @@ app.get('/api/sync-payouts', authenticateJWT, async (req, res) => {
     await syncPayoutsWithNode();
     res.status(200).json({ message: 'Payouts synchronized successfully' });
   } catch (error) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Failed to synchronize payouts', error: error.message });
   }
 });
@@ -126,6 +132,7 @@ app.post('/api/fiat-received', authenticateJWT, async (req, res) => {
     res.status(200).json({ message: 'Fiat received processed successfully' });
   } catch (error) {
     console.error('Error processing fiat received:', error);
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Error processing fiat received', error: error.message });
   }
 });
@@ -136,6 +143,7 @@ app.post('/api/settle-holdinvoices-by-order', authenticateJWT, async (req, res) 
     const result = await settleHoldInvoicesByOrderIdService(orderId);
     res.status(200).json({ message: 'Hold invoices settled successfully', result });
   } catch (error) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Error settling hold invoices', error: error.message });
   }
 });
@@ -149,6 +157,7 @@ initializeNDK().then(() => {
 
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
+    // @ts-expect-error TS(2304): Cannot find name 'checkAndUpdateAcceptedInvoices'.
     await checkAndUpdateAcceptedInvoices();
     res.status(200).send({ message: 'Invoices checked and updated successfully.' });
   } catch (error) {
@@ -158,6 +167,7 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
 
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
   const { orderId } = req.body;
+  // @ts-expect-error TS(2339): Property 'user' does not exist on type 'Request<{}... Remove this comment to see the full error message
   const userId = req.user.id; // Assuming `req.user` contains the authenticated user's details
 
   try {
@@ -172,14 +182,17 @@ app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => 
     console.log('User ID:', userId);
 
     // Check if the user is the maker or taker of the order
+    // @ts-expect-error TS(2339): Property 'customer_id' does not exist on type 'any... Remove this comment to see the full error message
     if (order.customer_id !== userId && order.taker_customer_id !== userId) {
       return res.status(403).json({ message: 'You are not authorized to access this chatroom' });
     }
 
     // Proceed to create or check chatroom
+    // @ts-expect-error TS(2339): Property 'makeOfferUrl' does not exist on type '{ ... Remove this comment to see the full error message
     const { makeOfferUrl, acceptOfferUrl } = await checkAndCreateChatroom(orderId);
     res.status(200).json({ makeChatUrl: makeOfferUrl, acceptChatUrl: acceptOfferUrl });
   } catch (error) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Failed to create chatroom', error: error.message });
   }
 });
@@ -192,6 +205,7 @@ app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
     await updateAcceptOfferUrl(chat_id, accept_offer_url);
     res.status(200).json({ message: 'Accept-offer URL updated successfully' });
   } catch (error) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Failed to update accept-offer URL', error: error.message });
   }
 });
@@ -201,9 +215,11 @@ app.use('/api/settle', settleRoutes);
 // Get all orders
 app.get('/api/orders', authenticateJWT, async (req, res) => {
   try {
+    // @ts-expect-error TS(2554): Expected 2 arguments, but got 1.
     const result = await query('SELECT * FROM orders');
     res.status(200).json(result.rows);
   } catch (err) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ error: err.message });
   }
 });
@@ -218,6 +234,7 @@ app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
     }
     res.status(200).json(result.rows[0]);
   } catch (err) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ error: err.message });
   }
 });
@@ -232,6 +249,7 @@ app.get('/api/invoice/:orderId', authenticateJWT, async (req, res) => {
     }
     res.status(200).json(result.rows[0]);
   } catch (err) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ error: err.message });
   }
 });
@@ -245,6 +263,7 @@ app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
     }
     res.status(200).json(result.rows);
   } catch (err) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ error: err.message });
   }
 });
@@ -258,6 +277,7 @@ app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
     }
     res.status(200).json(result.rows[0]);
   } catch (err) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ error: err.message });
   }
 });
@@ -272,6 +292,7 @@ app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
     }
     res.status(200).json(result.rows[0]);
   } catch (err) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ error: err.message });
   }
 });

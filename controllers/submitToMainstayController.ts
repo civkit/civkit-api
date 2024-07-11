@@ -11,10 +11,11 @@ const pool = new Pool({
   host: process.env.DB_HOST,
   database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
+  // @ts-expect-error TS(2322): Type 'string | undefined' is not assignable to typ... Remove this comment to see the full error message
   port: process.env.DB_PORT,
 });
 
-export async function submit(req, res) {
+export async function submit(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
   }
@@ -69,6 +70,7 @@ export async function submit(req, res) {
     // Handle Mainstay response
     return res.status(200).json(mainstayResponse.data);
   } catch (error) {
+    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     console.error('Error submitting to Mainstay:', error.response ? error.response.data : error.message);
     return res.status(500).json({ error: 'Failed to submit to Mainstay' });
   }

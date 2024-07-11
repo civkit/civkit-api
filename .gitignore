@@ -1,7 +1,7 @@
 node_modules
 .env
 .NDK_private_key
-
+dist/
 # Dependency directories
 node_modules/
 

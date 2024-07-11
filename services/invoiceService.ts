@@ -16,11 +16,12 @@ const pool = new Pool({
   host: process.env.DB_HOST,
   database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
+  // @ts-expect-error TS(2322): Type 'string | undefined' is not assignable to typ... Remove this comment to see the full error message
   port: process.env.DB_PORT,
 });
 
 // creates the hold invoice and 
-async function postHoldinvoice(totalAmountMsat, label, description) {
+async function postHoldinvoice(totalAmountMsat: any, label: any, description: any) {
   const amount_msat = Math.round(totalAmountMsat * 0.05);  // Calculate 5% of the total amount
   const data = {
     amount_msat,
@@ -52,7 +53,7 @@ async function postHoldinvoice(totalAmountMsat, label, description) {
 }
 
 // looks up holdinvoices and returns status
-async function holdInvoiceLookup(payment_hash) {
+async function holdInvoiceLookup(payment_hash: any) {
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
       method: 'POST',
@@ -148,7 +149,7 @@ async function syncInvoicesWithNode() {
 
       for (const order_id in orderUpdates) {
         const statuses = orderUpdates[order_id];
-        const allHoldInvoices = statuses.filter(status => status === 'ACCEPTED').length === 2;
+        const allHoldInvoices = statuses.filter((status: any) => status === 'ACCEPTED').length === 2;
         const fullInvoicePaid = statuses.includes('ACCEPTED');
 
         if (allHoldInvoices && fullInvoicePaid) {
@@ -226,7 +227,7 @@ async function syncPayoutsWithNode() {
   }
 }
 
-async function generateBolt11Invoice(amount_msat, label, description, type, premium) {
+async function generateBolt11Invoice(amount_msat: any, label: any, description: any, type: any, premium: any) {
   const data = {
     amount_msat: parseInt(amount_msat),
     label,
@@ -263,7 +264,7 @@ async function generateBolt11Invoice(amount_msat, label, description, type, prem
   }
 }
 
-async function postFullAmountInvoice(amount_msat, label, description, orderId, orderType) {
+async function postFullAmountInvoice(amount_msat: any, label: any, description: any, orderId: any, orderType: any) {
   const data = {
       amount_msat,
       label,
@@ -302,7 +303,7 @@ async function postFullAmountInvoice(amount_msat, label, description, orderId, o
 }
 
 
-async function handleFiatReceived(orderId) {
+async function handleFiatReceived(orderId: any) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -341,7 +342,7 @@ async function handleFiatReceived(orderId) {
   }
 }
 
-async function payInvoice(lnInvoice) {
+async function payInvoice(lnInvoice: any) {
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/pay`, { 
       method: 'POST',
@@ -365,7 +366,7 @@ async function payInvoice(lnInvoice) {
   }
 }
 
-async function updatePayoutStatus(client, orderId, status) {
+async function updatePayoutStatus(client: any, orderId: any, status: any) {
   try {
     const result = await client.query(
       'UPDATE payouts SET status = $1 WHERE order_id = $2 RETURNING *',
@@ -382,7 +383,7 @@ async function updatePayoutStatus(client, orderId, status) {
   }
 }
 
-async function settleHoldInvoice(lnInvoice) {
+async function settleHoldInvoice(lnInvoice: any) {
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
       method: 'POST',
@@ -424,7 +425,7 @@ async function checkAndProcessPendingPayouts() {
   }
 }
 
-const settleHoldInvoiceByHash = async (payment_hash) => {
+const settleHoldInvoiceByHash = async (payment_hash: any) => {
   try {
     console.log(`Settling hold invoice with payment_hash: ${payment_hash}`);
 
@@ -453,7 +454,7 @@ const settleHoldInvoiceByHash = async (payment_hash) => {
   }
 };
 
-const settleHoldInvoicesByOrderIdService = async (orderId) => {
+const settleHoldInvoicesByOrderIdService = async (orderId: any) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -490,11 +491,12 @@ const settleHoldInvoicesByOrderIdService = async (orderId) => {
 
 // generic chat functions that are not currently being used.
 // placeholders for alerting users when their chatroom is open
-async function notifyUsers(orderId) {
+async function notifyUsers(orderId: any) {
   console.log(`Chatroom is available for Order ID: ${orderId} for both Maker and Taker`);
 }
 
-async function handleChatroomTrigger(orderId) {
+async function handleChatroomTrigger(orderId: any) {
+  // @ts-expect-error TS(2304): Cannot find name 'generateChatId'.
   const chatId = generateChatId(orderId); // Replace with your chatroom logic
   //console.log(`Chatroom ID ${chatId} is created for Order ID: ${orderId}`);
   
@@ -507,7 +509,7 @@ async function handleChatroomTrigger(orderId) {
 // chatroom code that hooks into the chat app and returns the chatroom when invoices are marked as paid for the orderId
 
 const CHAT_APP_URL = 'http://localhost:3456';
-async function checkInvoicesAndCreateChatroom(orderId) {
+async function checkInvoicesAndCreateChatroom(orderId: any) {
   const agent = new https.Agent({ rejectUnauthorized: false });
 
   try {
@@ -542,7 +544,7 @@ async function checkInvoicesAndCreateChatroom(orderId) {
       let holdCount = 0;
 
       for (const dbInvoice of invoiceMap.values()) {
-        const invoice = invoices.find(inv => inv.payment_hash === dbInvoice.payment_hash);
+        const invoice = invoices.find((inv: any) => inv.payment_hash === dbInvoice.payment_hash);
 
         if (!invoice) {
           console.log(`Invoice with payment_hash ${dbInvoice.payment_hash} not found in Lightning node response`);
@@ -606,12 +608,12 @@ async function checkInvoicesAndCreateChatroom(orderId) {
     throw error;
   }
 }
-async function createChatroom(orderId) {
+async function createChatroom(orderId: any) {
   return `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
 }
 
 
-async function updateOrderStatus(orderId, status) {
+async function updateOrderStatus(orderId: any, status: any) {
   const client = await pool.connect();
   try {
     const result = await client.query(
@@ -631,7 +633,7 @@ async function updateOrderStatus(orderId, status) {
   }
 }
 
-async function getHoldInvoicesByOrderId(orderId) {
+async function getHoldInvoicesByOrderId(orderId: any) {
   const client = await pool.connect();
   try {
     const result = await client.query(
@@ -647,7 +649,7 @@ async function getHoldInvoicesByOrderId(orderId) {
   }
 }
 
-async function settleHoldInvoices(orderId) {
+async function settleHoldInvoices(orderId: any) {
   try {
     // Update order status to 'trade_complete'
     await updateOrderStatus(orderId, 'trade_complete');
@@ -664,7 +666,7 @@ async function settleHoldInvoices(orderId) {
   }
 }
 
-async function generateInvoice(amount_msat, description, label) {
+async function generateInvoice(amount_msat: any, description: any, label: any) {
   const data = {
       amount_msat,  // Make sure this is in millisatoshis and the value is correct
       label,        // Unique identifier for the invoice
@@ -714,7 +716,7 @@ async function generateInvoice(amount_msat, description, label) {
   }
 }
 
-export const checkInvoiceStatus = async (payment_hash) => {
+export const checkInvoiceStatus = async (payment_hash: any) => {
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
       method: 'POST',
@@ -745,7 +747,7 @@ export const checkInvoiceStatus = async (payment_hash) => {
   }
 };
 
-const checkInvoicePayment = async (payment_hash) => {
+const checkInvoicePayment = async (payment_hash: any) => {
   try {
     const invoice = await checkInvoiceStatus(payment_hash);
     return invoice.status === 'paid';

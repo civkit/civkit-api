@@ -13,15 +13,16 @@ const pool = new Pool({
   host: process.env.DB_HOST,
   database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
+  // @ts-expect-error TS(2322): Type 'string | undefined' is not assignable to typ... Remove this comment to see the full error message
   port: process.env.DB_PORT,
 });
 
-async function createChatroom(orderId) {
+async function createChatroom(orderId: any) {
     const makeOfferUrl = `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
     return { makeOfferUrl };
 }
 
-async function saveAcceptOfferUrl(orderId, acceptOfferUrl) {
+async function saveAcceptOfferUrl(orderId: any, acceptOfferUrl: any) {
     const client = await pool.connect();
     try {
       await client.query(
@@ -37,7 +38,7 @@ async function saveAcceptOfferUrl(orderId, acceptOfferUrl) {
     }
 }
 
-async function updateAcceptOfferUrl(chat_id, accept_offer_url) {
+async function updateAcceptOfferUrl(chat_id: any, accept_offer_url: any) {
     const client = await pool.connect();
     try {
       await client.query(
@@ -53,7 +54,7 @@ async function updateAcceptOfferUrl(chat_id, accept_offer_url) {
     }
 }
 
-async function checkAndCreateChatroom(orderId) {
+async function checkAndCreateChatroom(orderId: any) {
     const client = await pool.connect();
     try {
       // Check if a chatroom already exists for the given orderId

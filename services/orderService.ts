@@ -8,7 +8,7 @@ config();
  * @param {Object} orderData - The data for the order including additional fields.
  * @returns {Promise<Object>} - The created order and invoice data.
  */
-async function addOrderAndGenerateInvoice(orderData) {
+async function addOrderAndGenerateInvoice(orderData: any) {
     const {
         customer_id,
         order_details,
@@ -69,7 +69,7 @@ async function addOrderAndGenerateInvoice(orderData) {
     }
 }
 
-async function processTakeOrder(orderId, holdInvoice) {
+async function processTakeOrder(orderId: any, holdInvoice: any) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -96,7 +96,7 @@ async function processTakeOrder(orderId, holdInvoice) {
     }
 }
 
-async function generateTakerInvoice(orderId, takerDetails) {
+async function generateTakerInvoice(orderId: any, takerDetails: any) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -172,11 +172,12 @@ async function generateTakerInvoice(orderId, takerDetails) {
 }
 
 // Monitoring and updating the status
-async function checkAndUpdateOrderStatus(orderId, payment_hash) {
+async function checkAndUpdateOrderStatus(orderId: any, payment_hash: any) {
     const client = await pool.connect();
     try {
         client.query('BEGIN');
         
+        // @ts-expect-error TS(2304): Cannot find name 'queryInvoiceStatus'.
         const checkInvoiceStatus = await queryInvoiceStatus(payment_hash); // Assume this function checks the payment status
         if (checkInvoiceStatus === 'paid') {
             const updateOrderText = `
@@ -198,7 +199,7 @@ async function checkAndUpdateOrderStatus(orderId, payment_hash) {
     }
 }
 
-async function handleFiatReceivedAndUpdateOrder(orderId) {
+async function handleFiatReceivedAndUpdateOrder(orderId: any) {
     try {
         await handleFiatReceived(orderId);
         console.log("Order status updated to indicate fiat received.");
@@ -208,7 +209,7 @@ async function handleFiatReceivedAndUpdateOrder(orderId) {
     }
 }
 
-async function updatePayoutStatus(orderId, status) {
+async function updatePayoutStatus(orderId: any, status: any) {
     const db = await import('../config/db.js'); // Import the database module dynamically
 
     try {

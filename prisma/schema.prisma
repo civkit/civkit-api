@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  username     String    @unique
+  password     String
+  created_at   DateTime? @default(now())
+  invoice      String?
+  status       String?
+  payment_hash String?
+
+  @@map("users")
+}
+
+model Chat {
+  chat_id          Int       @id @default(autoincrement())
+  order_id         Int
+  chatroom_url     String
+  status           String?   @default("pending")
+  created_at       DateTime? @default(now())
+  accept_offer_url String?
+  token            String?
+  order            Order     @relation(fields: [order_id], references: [order_id])
+
+  @@map("chats")
+}
+
+model Invoice {
+  invoice_id   Int       @id @default(autoincrement())
+  order_id     Int?
+  bolt11       String
+  amount_msat  BigInt
+  description  String?
+  status       String?   @default("pending")
+  created_at   DateTime? @default(now())
+  expires_at   DateTime?
+  payment_hash String?
+  invoice_type String?
+  user_type    String?
+
+  @@map("invoices")
+}
+
+model Order {
+  order_id          Int       @id @default(autoincrement())
+  customer_id       Int?
+  order_details     String?
+  amount_msat       Int?
+  currency          String
+  payment_method    String?
+  status            String?   @default("pending")
+  created_at        DateTime? @default(now())
+  escrow_status     String?   @default("pending")
+  type              Int?      @db.SmallInt
+  premium           Decimal?  @default(0.00) @db.Decimal(65, 30)
+  taker_customer_id Int?
+  chats             Chat[]
+  payouts           Payout[]
+
+  @@map("orders")
+}
+
+model PaymentHash {
+  id             Int       @id @default(autoincrement())
+  order_id       Int?
+  payment_hash   String
+  payment_secret String?
+  amount_sat     BigInt
+  status         String?   @default("pending")
+  created_at     DateTime? @default(now())
+  expires_at     DateTime?
+
+  @@map("payment_hashes")
+}
+
+model Payout {
+  payout_id  Int       @id @default(autoincrement())
+  order_id   Int
+  ln_invoice String
+  status     String?   @default("pending")
+  created_at DateTime? @default(now())
+  updated_at DateTime? @default(now())
+  order      Order     @relation(fields: [order_id], references: [order_id])
+
+  @@map("payouts")
+}

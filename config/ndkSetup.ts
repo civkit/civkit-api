@@ -9,7 +9,7 @@ const rl = readline.createInterface({
 
 let our_relays = ["ws://localhost:8080"];
 await (async () => {
-  const question = (query) => new Promise((resolve) => {
+  const question = (query: any) => new Promise((resolve) => {
     rl.question(query, resolve);
   });
   // const answer = await question('Enter relay URLs (separated by commas (if empty ws://localhost:8080 will be used)):');

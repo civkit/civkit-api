@@ -1,12 +1,12 @@
 import bcrypt from 'bcrypt';
 import fs from 'fs';
 import path from 'path';
-import { pool } from '../config/db.js';
+import { pool, prisma } from '../config/db.js';
 import { generateInvoice, checkInvoicePayment } from './invoiceService.js';
 import { exec } from 'child_process';
 
 // Register User
-export const registerUser = async (username, password) => {
+export const registerUser = async (username: any, password: any) => {
   // Hash the password
   const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -39,7 +39,7 @@ export const registerUser = async (username, password) => {
 };
 
 // Finalize Registration after verifying payment
-export const finalizeRegistration = async (username) => {
+export const finalizeRegistration = async (username: any) => {
   // Check if the invoice is paid
   const user = await getUserByUsername(username);
   if (!user) {
@@ -58,15 +58,15 @@ export const finalizeRegistration = async (username) => {
 };
 
 // Authenticate User
-export const authenticateUser = async (username, password) => {
-  const query = 'SELECT * FROM users WHERE username = $1';
-  const values = [username];
 
+export const authenticateUser = async (username: string, password: string) => {
   try {
-    const { rows } = await pool.query(query, values);
-    if (rows.length === 0) throw new Error('User not found');
+    const user = await prisma.user.findUnique({
+      where: { username: username },
+    });
 
-    const user = rows[0];
+    if (!user) throw new Error('User not found');
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) throw new Error('Invalid credentials');
 
@@ -77,7 +77,7 @@ export const authenticateUser = async (username, password) => {
 };
 
 // Update User Status and Add to Whitelist
-export const updateUserStatus = async (username, status) => {
+export const updateUserStatus = async (username: any, status: any) => {
   const query = 'UPDATE users SET status = $1 WHERE username = $2 AND status != $1 RETURNING *';
   const values = [status, username];
 
@@ -102,7 +102,7 @@ export const updateUserStatus = async (username, status) => {
   }
 };
 
-const stopContainer = (callback) => {
+const stopContainer = (callback: any) => {
   exec('podman stop nostr-relay', (error, stdout, stderr) => {
     if (error && !stderr.includes('no such container')) {
       console.error(`Error stopping relay: ${error}`);
@@ -113,7 +113,7 @@ const stopContainer = (callback) => {
   });
 };
 
-const removeContainer = (callback) => {
+const removeContainer = (callback: any) => {
   exec('podman rm nostr-relay', (error, stdout, stderr) => {
     if (error && !stderr.includes('no such container')) {
       console.error(`Error removing relay: ${error}`);
@@ -140,9 +140,9 @@ const runContainer = () => {
 };
 
 const restartRelay = () => {
-  stopContainer((stopError) => {
+  stopContainer((stopError: any) => {
     if (!stopError || stopError.message.includes('no such container')) {
-      removeContainer((removeError) => {
+      removeContainer((removeError: any) => {
         if (!removeError || removeError.message.includes('no such container')) {
           runContainer();
         }
@@ -151,7 +151,7 @@ const restartRelay = () => {
   });
 };
 
-const addPubkeyToWhitelist = async (pubkey) => {
+const addPubkeyToWhitelist = async (pubkey: any) => {
   try {
     const configPath = '/home/dave/nostr-rs-relay/config.toml';
     const configContent = fs.readFileSync(configPath, 'utf-8');
@@ -210,13 +210,19 @@ export const pollAndCompleteRegistration = async () => {
 };
 
 // Helper function to get user by username
-const getUserByUsername = async (username) => {
-  const query = 'SELECT * FROM users WHERE username = $1';
-  const values = [username];
-
+const getUserByUsername = async (username: string) => {
   try {
-    const { rows } = await pool.query(query, values);
-    return rows[0];
+    const user = await prisma.user.findUnique({
+      where: {
+        username: username
+      }
+    });
+
+    if (!user) {
+      return null; // Or you might want to throw an error here, depending on your use case
+    }
+
+    return user;
   } catch (error) {
     console.error('Error fetching user by username:', error);
     throw new Error('Failed to fetch user');
