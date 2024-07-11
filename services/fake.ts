@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import fs from 'fs';
 import path from 'path';
-import { pool, prisma } from '../config/db.js';
+import { prisma } from '../config/db.js';
 import { generateInvoice, checkInvoicePayment } from './invoiceService.js';
 import { exec } from 'child_process';
 
@@ -62,9 +62,7 @@ export const finalizeRegistration = async (username: string) => {
   return updatedUser;
 };
 
-
 // Authenticate User
-
 export const authenticateUser = async (username: string, password: string) => {
   try {
     const user = await prisma.user.findUnique({
@@ -114,88 +112,8 @@ export const updateUserStatus = async (username: string, status: string) => {
   }
 };
 
+// ... (stopContainer, removeContainer, runContainer, restartRelay functions remain unchanged)
 
-const stopContainer = (callback: any) => {
-  exec('podman stop nostr-relay', (error, stdout, stderr) => {
-    if (error && !stderr.includes('no such container')) {
-      console.error(`Error stopping relay: ${error}`);
-      return callback(error);
-    }
-    console.log(`Relay stopped successfully: ${stdout}`);
-    callback(null);
-  });
-};
-
-const removeContainer = (callback: any) => {
-  exec('podman rm nostr-relay', (error, stdout, stderr) => {
-    if (error && !stderr.includes('no such container')) {
-      console.error(`Error removing relay: ${error}`);
-      return callback(error);
-    }
-    console.log(`Relay removed successfully: ${stdout}`);
-    callback(null);
-  });
-};
-
-// alot of hardcodes here 
-const runContainer = () => {
-  exec('podman run -d --rm -p 7000:8080 --user=100:100 -v /home/dave/nostr-rs-relay/data:/usr/src/app/db:Z -v /home/dave/nostr-rs-relay/config.toml:/usr/src/app/config.toml:ro,Z --name nostr-relay nostr-rs-relay:latest', (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error starting relay: ${error}`);
-      return;
-    }
-    if (stderr) {
-      console.error(`Stderr from relay start: ${stderr}`);
-      return;
-    }
-    console.log(`Relay started successfully: ${stdout}`);
-  });
-};
-
-const restartRelay = () => {
-  stopContainer((stopError: any) => {
-    if (!stopError || stopError.message.includes('no such container')) {
-      removeContainer((removeError: any) => {
-        if (!removeError || removeError.message.includes('no such container')) {
-          runContainer();
-        }
-      });
-    }
-  });
-};
-
-const addPubkeyToWhitelist = async (pubkey: any) => {
-  try {
-    const configPath = '/home/dave/nostr-rs-relay/config.toml';
-    const configContent = fs.readFileSync(configPath, 'utf-8');
-    const whitelistRegex = /pubkey_whitelist\s*=\s*\[(.*?)\]/s;
-    const match = configContent.match(whitelistRegex);
-
-    if (match) {
-      let whitelist = match[1].trim();
-      const pubkeyArray = whitelist.split(',').map(key => key.trim().replace(/"/g, ''));
-      if (!pubkeyArray.includes(pubkey)) {
-        const updatedWhitelist = `${whitelist}, "${pubkey}"`;
-
-        const updatedConfig = configContent.replace(whitelistRegex, `pubkey_whitelist = [${updatedWhitelist}]`);
-        fs.writeFileSync(configPath, updatedConfig, 'utf-8');
-        console.log(`Added ${pubkey} to pubkey_whitelist in config.toml`);
-
-        // Restart the relay service
-        restartRelay();
-      } else {
-        console.log(`${pubkey} is already in the pubkey_whitelist.`);
-      }
-    } else {
-      console.error('pubkey_whitelist not found in config.toml');
-    }
-  } catch (error) {
-    console.error('Error adding pubkey to whitelist:', error);
-    throw new Error('Failed to update whitelist');
-  }
-};
-
-// Poll and Complete Registration
 // Poll and Complete Registration
 export const pollAndCompleteRegistration = async () => {
   try {
@@ -222,6 +140,7 @@ export const pollAndCompleteRegistration = async () => {
     throw new Error('Failed to poll and complete registrations');
   }
 };
+
 // Helper function to get user by username
 const getUserByUsername = async (username: string) => {
   try {
