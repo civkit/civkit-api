@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import fs from 'fs';
 import path from 'path';
-import { pool } from '../config/db.js';
+import { pool, prisma } from '../config/db.js';
 import { generateInvoice, checkInvoicePayment } from './invoiceService.js';
 import { exec } from 'child_process';
 
@@ -58,15 +58,15 @@ export const finalizeRegistration = async (username: any) => {
 };
 
 // Authenticate User
-export const authenticateUser = async (username: any, password: any) => {
-  const query = 'SELECT * FROM users WHERE username = $1';
-  const values = [username];
 
+export const authenticateUser = async (username: string, password: string) => {
   try {
-    const { rows } = await pool.query(query, values);
-    if (rows.length === 0) throw new Error('User not found');
+    const user = await prisma.user.findUnique({
+      where: { username: username },
+    });
 
-    const user = rows[0];
+    if (!user) throw new Error('User not found');
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) throw new Error('Invalid credentials');
 
@@ -210,13 +210,19 @@ export const pollAndCompleteRegistration = async () => {
 };
 
 // Helper function to get user by username
-const getUserByUsername = async (username: any) => {
-  const query = 'SELECT * FROM users WHERE username = $1';
-  const values = [username];
-
+const getUserByUsername = async (username: string) => {
   try {
-    const { rows } = await pool.query(query, values);
-    return rows[0];
+    const user = await prisma.user.findUnique({
+      where: {
+        username: username
+      }
+    });
+
+    if (!user) {
+      return null; // Or you might want to throw an error here, depending on your use case
+    }
+
+    return user;
   } catch (error) {
     console.error('Error fetching user by username:', error);
     throw new Error('Failed to fetch user');

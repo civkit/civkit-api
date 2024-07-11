@@ -36,7 +36,6 @@ function postHoldinvoice(totalAmountMsat, label, description) {
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
                 method: 'POST',
-                // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
                 headers: {
                     'Accept': 'application/json',
                     'Rune': MY_RUNE,
@@ -62,7 +61,6 @@ function holdInvoiceLookup(payment_hash) {
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
                 method: 'POST',
-                // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
                 headers: {
                     'Accept': 'application/json',
                     'Rune': MY_RUNE,
@@ -91,7 +89,6 @@ function syncInvoicesWithNode() {
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
                 method: 'POST',
-                // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
                 headers: {
                     'Accept': 'application/json',
                     'Rune': MY_RUNE,
@@ -133,12 +130,9 @@ function syncInvoicesWithNode() {
                         else {
                             console.log(`Invoice with payment_hash ${invoice.payment_hash} already has status: ${newStatus}`);
                         }
-                        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
                         if (!orderUpdates[order_id]) {
-                            // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
                             orderUpdates[order_id] = [];
                         }
-                        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
                         orderUpdates[order_id].push(newStatus);
                     }
                     else {
@@ -146,7 +140,6 @@ function syncInvoicesWithNode() {
                     }
                 }
                 for (const order_id in orderUpdates) {
-                    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
                     const statuses = orderUpdates[order_id];
                     const allHoldInvoices = statuses.filter((status) => status === 'ACCEPTED').length === 2;
                     const fullInvoicePaid = statuses.includes('ACCEPTED');
@@ -184,7 +177,6 @@ function syncPayoutsWithNode() {
         });
         const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
             method: 'POST',
-            // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
             headers: {
                 'Accept': 'application/json',
                 'Rune': MY_RUNE,
@@ -231,7 +223,6 @@ function generateBolt11Invoice(amount_msat, label, description, type, premium) {
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
                 method: 'POST',
-                // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
                 headers: {
                     'Accept': 'application/json',
                     'Rune': MY_RUNE,
@@ -267,7 +258,6 @@ function postFullAmountInvoice(amount_msat, label, description, orderId, orderTy
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
                 method: 'POST',
-                // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
                 headers: {
                     'Accept': 'application/json',
                     'Rune': MY_RUNE,
@@ -331,7 +321,6 @@ function payInvoice(lnInvoice) {
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/pay`, {
                 method: 'POST',
-                // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
                 headers: {
                     'Accept': 'application/json',
                     'Rune': MY_RUNE,
@@ -370,7 +359,6 @@ function settleHoldInvoice(lnInvoice) {
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
                 method: 'POST',
-                // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
                 headers: {
                     'Accept': 'application/json',
                     'Rune': MY_RUNE,
@@ -412,7 +400,6 @@ const settleHoldInvoiceByHash = (payment_hash) => __awaiter(void 0, void 0, void
         console.log(`Settling hold invoice with payment_hash: ${payment_hash}`);
         const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
             method: 'POST',
-            // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
             headers: {
                 'Accept': 'application/json',
                 'Rune': MY_RUNE,
@@ -482,7 +469,6 @@ function checkInvoicesAndCreateChatroom(orderId) {
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
                 method: 'POST',
-                // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
                 headers: {
                     'Accept': 'application/json',
                     'Rune': MY_RUNE,
@@ -630,7 +616,6 @@ function generateInvoice(amount_msat, description, label) {
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
                 method: 'POST',
-                // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
                 headers: {
                     'Accept': 'application/json',
                     'Rune': MY_RUNE,
@@ -667,7 +652,6 @@ export const checkInvoiceStatus = (payment_hash) => __awaiter(void 0, void 0, vo
     try {
         const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
             method: 'POST',
-            // @ts-expect-error TS(2322): Type '{ Accept: string; Rune: string | undefined; ... Remove this comment to see the full error message
             headers: {
                 'Accept': 'application/json',
                 'Rune': MY_RUNE,

@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 import bcrypt from 'bcrypt';
 import fs from 'fs';
-import { pool } from '../config/db.js';
+import { pool, prisma } from '../config/db.js';
 import { generateInvoice, checkInvoicePayment } from './invoiceService.js';
 import { exec } from 'child_process';
 // Register User
@@ -58,13 +58,12 @@ export const finalizeRegistration = (username) => __awaiter(void 0, void 0, void
 });
 // Authenticate User
 export const authenticateUser = (username, password) => __awaiter(void 0, void 0, void 0, function* () {
-    const query = 'SELECT * FROM users WHERE username = $1';
-    const values = [username];
     try {
-        const { rows } = yield pool.query(query, values);
-        if (rows.length === 0)
+        const user = yield prisma.user.findUnique({
+            where: { username: username },
+        });
+        if (!user)
             throw new Error('User not found');
-        const user = rows[0];
         const isPasswordValid = yield bcrypt.compare(password, user.password);
         if (!isPasswordValid)
             throw new Error('Invalid credentials');
@@ -198,11 +197,16 @@ export const pollAndCompleteRegistration = () => __awaiter(void 0, void 0, void 
 });
 // Helper function to get user by username
 const getUserByUsername = (username) => __awaiter(void 0, void 0, void 0, function* () {
-    const query = 'SELECT * FROM users WHERE username = $1';
-    const values = [username];
     try {
-        const { rows } = yield pool.query(query, values);
-        return rows[0];
+        const user = yield prisma.user.findUnique({
+            where: {
+                username: username
+            }
+        });
+        if (!user) {
+            return null; // Or you might want to throw an error here, depending on your use case
+        }
+        return user;
     }
     catch (error) {
         console.error('Error fetching user by username:', error);

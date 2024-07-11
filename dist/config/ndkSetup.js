@@ -35,7 +35,6 @@ function initializeSignerSync() {
     else {
         const generated = NDKPrivateKeySigner.generate();
         privateKey = generated.privateKey;
-        // @ts-expect-error TS(2345): Argument of type 'string | undefined' is not assig... Remove this comment to see the full error message
         writeFileSync(privateKeyFilePath, privateKey);
         console.log('New private key generated and saved.');
     }
@@ -49,7 +48,6 @@ export function initializeNDK() {
             signer: initializeSignerSync()
         });
         yield ndk.connect();
-        // @ts-expect-error TS(2532): Object is possibly 'undefined'.
         const user = yield ndk.signer.user();
         console.log('\x1b[36m' + 'Our Pubkey: ' + user.pubkey + '\x1b[0m');
     });
