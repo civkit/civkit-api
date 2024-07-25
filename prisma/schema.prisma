@@ -8,14 +8,13 @@ datasource db {
 }
 
 model User {
-  id           Int       @id @default(autoincrement())
-  username     String    @unique
-  password     String
-  created_at   DateTime? @default(now())
-  invoice      String?
-  status       String?
-  payment_hash String?
-
+  id            Int       @id @default(autoincrement())
+  username      String    @unique
+  password      String
+  created_at    DateTime? @default(now())
+  invoice       String?
+  status        String?
+  payment_hash  String?
   @@map("users")
 }
 
@@ -59,7 +58,7 @@ model Order {
   created_at        DateTime? @default(now())
   escrow_status     String?   @default("pending")
   type              Int?      @db.SmallInt
-  premium           Decimal?  @default(0.00) @db.Decimal(65, 30)
+  premium           Decimal?  @default(0.00)
   taker_customer_id Int?
   chats             Chat[]
   payouts           Payout[]

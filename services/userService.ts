@@ -1,12 +1,10 @@
+import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
-import fs from 'fs';
-import path from 'path';
-import { pool, prisma } from '../config/db.js';
 import { generateInvoice, checkInvoicePayment } from './invoiceService.js';
-import { exec } from 'child_process';
 
-// Register User
-export const registerUser = async (username: any, password: any) => {
+const prisma = new PrismaClient();
+
+export const registerUser = async (username: string, password: string) => {
   // Hash the password
   const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -25,13 +23,18 @@ export const registerUser = async (username: any, password: any) => {
 
   const { bolt11: invoice, payment_hash } = invoiceData;
 
-  // Insert user with username, invoice, hashed password, and payment_hash
-  const query = 'INSERT INTO users (username, password, invoice, payment_hash, status) VALUES ($1, $2, $3, $4, $5) RETURNING *';
-  const values = [username, hashedPassword, invoice, payment_hash, 'pending'];
-
+  // Insert user with Prisma
   try {
-    const { rows } = await pool.query(query, values);
-    return rows[0];
+    const user = await prisma.user.create({
+      data: {
+        username,
+        password: hashedPassword,
+        invoice,
+        payment_hash,
+        status: 'pending'
+      }
+    });
+    return user;
   } catch (error) {
     console.error('Error registering user:', error);
     throw new Error('User registration failed');
@@ -77,21 +80,22 @@ export const authenticateUser = async (username: string, password: string) => {
 };
 
 // Update User Status and Add to Whitelist
-export const updateUserStatus = async (username: any, status: any) => {
-  const query = 'UPDATE users SET status = $1 WHERE username = $2 AND status != $1 RETURNING *';
-  const values = [status, username];
-
+export const updateUserStatus = async (username: string, status: string) => {
   try {
-    const { rows } = await pool.query(query, values);
-    if (rows.length === 0) {
+    const updatedUser = await prisma.user.updateMany({
+      where: { 
+        username,
+        NOT: { status }
+      },
+      data: { status }
+    });
+
+    if (updatedUser.count === 0) {
       console.log(`User ${username} already has status ${status}, skipping update.`);
-      return null; // No update was made
+      return null;
     }
 
-    const updatedUser = rows[0];
-
     if (status === 'complete') {
-      // Add the username (npub) to the pubkey_whitelist
       await addPubkeyToWhitelist(username);
     }
 
@@ -184,17 +188,16 @@ const addPubkeyToWhitelist = async (pubkey: any) => {
 
 // Poll and Complete Registration
 export const pollAndCompleteRegistration = async () => {
-  const query = 'SELECT username, payment_hash FROM users WHERE status = $1';
-  const values = ['pending'];
-
   try {
-    const { rows } = await pool.query(query, values);
+    const pendingUsers = await prisma.user.findMany({
+      where: { status: 'pending' },
+      select: { username: true, payment_hash: true }
+    });
 
-    for (const user of rows) {
+    for (const user of pendingUsers) {
       try {
         const invoiceStatus = await checkInvoicePayment(user.payment_hash);
 
-        // If invoice is paid, update user status to 'complete'
         if (invoiceStatus) {
           await updateUserStatus(user.username, 'complete');
           console.log(`User ${user.username} registration completed.`);
