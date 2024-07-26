@@ -8,6 +8,7 @@ import {
   syncInvoicesWithNode,
   syncPayoutsWithNode,
   handleFiatReceived,
+  fullInvoiceLookup,
   settleHoldInvoicesByOrderIdService,
 } from './services/invoiceService.js';
 import { registerUser, authenticateUser,   pollAndCompleteRegistration } from './services/userService.js';
@@ -282,17 +283,33 @@ app.get('/api/invoice/:orderId', authenticateJWT, async (req, res) => {
 app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
-    const result = await query('SELECT * FROM invoices WHERE order_id = $1 AND user_type = $2', [orderId, 'taker']);
-    if (result.rows.length === 0) {
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        order_id: parseInt(orderId),
+        user_type: 'taker'
+      }
+    });
+
+    if (invoices.length === 0) {
       return res.status(404).json({ error: 'Taker invoice not found' });
     }
-    res.status(200).json(result.rows);
+
+    // Convert BigInt fields to strings for JSON serialization
+    const serializedInvoices = invoices.map(invoice => ({
+      ...invoice,
+      amount_msat: invoice.amount_msat.toString(),
+      amount_received_msat: invoice.amount_received_msat ? invoice.amount_received_msat.toString() : null,
+      created_at: invoice.created_at.toISOString(),
+      expires_at: invoice.expires_at.toISOString(),
+      paid_at: invoice.paid_at ? invoice.paid_at.toISOString() : null
+    }));
+
+    res.status(200).json(serializedInvoices);
   } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching taker invoice:', err);
+    res.status(500).json({ error: 'An error occurred while fetching the taker invoice' });
   }
 });
-
 app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
@@ -307,35 +324,45 @@ app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
       return res.status(404).json({ error: 'Full invoice not found for this order' });
     }
 
+    // Check the invoice status and update if paid
+    const invoiceStatus = await fullInvoiceLookup(invoice.payment_hash);
+
+    // Refresh the invoice data in case it was updated
+    const updatedInvoice = await prisma.invoice.findUnique({
+      where: { invoice_id: invoice.invoice_id }
+    });
+
     // Convert BigInt to String for JSON serialization
     const serializedInvoice = {
-      ...invoice,
-      amount_msat: invoice.amount_msat.toString(),
-      created_at: invoice.created_at.toISOString(),
-      expires_at: invoice.expires_at.toISOString(),
+      ...updatedInvoice,
+      amount_msat: updatedInvoice.amount_msat.toString(),
+      amount_received_msat: updatedInvoice.amount_received_msat ? updatedInvoice.amount_received_msat.toString() : null,
+      created_at: updatedInvoice.created_at.toISOString(),
+      expires_at: updatedInvoice.expires_at.toISOString(),
+      paid_at: updatedInvoice.paid_at ? updatedInvoice.paid_at.toISOString() : null
     };
 
-    res.status(200).json({ invoice: serializedInvoice });
+    res.status(200).json({ invoice: serializedInvoice, lightningStatus: invoiceStatus });
   } catch (err) {
     console.error('Error fetching full invoice:', err);
     res.status(500).json({ error: 'An error occurred while fetching the full invoice' });
   }
 });
 
-// endpoint to lookup full invoice by payment hash
-app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
-  const { payment_hash } = req.body;
-  try {
-    const result = await query('SELECT * FROM invoices WHERE payment_hash = $1 AND invoice_type = $2', [payment_hash, 'full']);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Full invoice not found' });
-    }
-    res.status(200).json(result.rows[0]);
-  } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
-  }
-});
+// // endpoint to lookup full invoice by payment hash
+// app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
+//   const { payment_hash } = req.body;
+//   try {
+//     const result = await query('SELECT * FROM invoices WHERE payment_hash = $1 AND invoice_type = $2', [payment_hash, 'full']);
+//     if (result.rows.length === 0) {
+//       return res.status(404).json({ error: 'Full invoice not found' });
+//     }
+//     res.status(200).json(result.rows[0]);
+//   } catch (err) {
+//     // @ts-expect-error TS(2571): Object is of type 'unknown'.
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
 
 
@@ -373,3 +400,4 @@ app.post('/api/get-invoice', async (req, res) => {
 });
 
 app.use('/api', submitToMainstayRoutes);
+

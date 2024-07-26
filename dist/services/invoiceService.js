@@ -719,4 +719,32 @@ const checkInvoicePayment = (payment_hash) => __awaiter(void 0, void 0, void 0, 
         throw error;
     }
 });
+// In services/invoiceService.js
+export function fullInvoiceLookup(paymentHash) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            console.log(`Attempting to look up invoice with payment hash: ${paymentHash}`);
+            const invoiceStatus = yield holdInvoiceLookup(paymentHash);
+            console.log(`Invoice status received:`, invoiceStatus);
+            if (invoiceStatus.state === 'SETTLED') {
+                console.log(`Updating database for paid invoice: ${paymentHash}`);
+                yield prisma.invoice.update({
+                    where: { payment_hash: paymentHash },
+                    data: {
+                        status: 'paid',
+                        amount_received_msat: BigInt(invoiceStatus.amount_received_msat),
+                        paid_at: new Date(invoiceStatus.paid_at * 1000)
+                    }
+                });
+                console.log(`Database updated successfully for invoice: ${paymentHash}`);
+            }
+            return invoiceStatus;
+        }
+        catch (error) {
+            console.error('Detailed error in fullInvoiceLookup:', error);
+            console.error('Error stack:', error.stack);
+            throw error;
+        }
+    });
+}
 export { postHoldinvoice, holdInvoiceLookup, generateBolt11Invoice, syncInvoicesWithNode, syncPayoutsWithNode, postFullAmountInvoice, handleFiatReceived, settleHoldInvoice, checkAndProcessPendingPayouts, updatePayoutStatus, settleHoldInvoiceByHash, payInvoice, settleHoldInvoicesByOrderIdService, checkInvoicesAndCreateChatroom, createChatroom, settleHoldInvoices, updateOrderStatus, getHoldInvoicesByOrderId, generateInvoice, checkInvoicePayment };

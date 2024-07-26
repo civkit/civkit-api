@@ -753,6 +753,34 @@ const checkInvoicePayment = async (payment_hash) => {
   }
 };
 
+// In services/invoiceService.js
+
+export async function fullInvoiceLookup(paymentHash) {
+  try {
+    console.log(`Attempting to look up invoice with payment hash: ${paymentHash}`);
+    const invoiceStatus = await holdInvoiceLookup(paymentHash);
+    console.log(`Invoice status received:`, invoiceStatus);
+    
+    if (invoiceStatus.state === 'SETTLED') {
+      console.log(`Updating database for paid invoice: ${paymentHash}`);
+      await prisma.invoice.update({
+        where: { payment_hash: paymentHash },
+        data: { 
+          status: 'paid',
+          amount_received_msat: BigInt(invoiceStatus.amount_received_msat),
+          paid_at: new Date(invoiceStatus.paid_at * 1000)
+        }
+      });
+      console.log(`Database updated successfully for invoice: ${paymentHash}`);
+    }
+    
+    return invoiceStatus;
+  } catch (error) {
+    console.error('Detailed error in fullInvoiceLookup:', error);
+    console.error('Error stack:', error.stack);
+    throw error;
+  }
+}
 export {
   postHoldinvoice,
   holdInvoiceLookup,
