@@ -1,6 +1,8 @@
 import { postHoldinvoice, generateBolt11Invoice, postFullAmountInvoice,  handleFiatReceived } from './invoiceService.js'; 
 import { pool } from '../config/db.js'; 
 import { config } from 'dotenv';
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 config();
 
 /**
@@ -8,7 +10,8 @@ config();
  * @param {Object} orderData - The data for the order including additional fields.
  * @returns {Promise<Object>} - The created order and invoice data.
  */
-async function addOrderAndGenerateInvoice(orderData: any) {
+async function addOrderAndGenerateInvoice(orderData) {
+    console.log('Starting addOrderAndGenerateInvoice with data:', orderData);
     const {
         customer_id,
         order_details,
@@ -17,12 +20,13 @@ async function addOrderAndGenerateInvoice(orderData: any) {
         payment_method,
         status,
         type,
-        premium
+        premium = 0
     } = orderData;
 
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
+        console.log('Transaction begun');
 
         // Insert the order into the database
         const orderInsertText = `
@@ -32,9 +36,17 @@ async function addOrderAndGenerateInvoice(orderData: any) {
         `;
         const orderResult = await client.query(orderInsertText, [customer_id, order_details, amount_msat, currency, payment_method, status, type, premium]);
         const order = orderResult.rows[0];
+        console.log('Order inserted:', order);
 
-        // Post the hold invoice for 5%
+        // Post the hold invoice
+        console.log('Generating hold invoice');
         const holdInvoiceData = await postHoldinvoice(amount_msat, `Hold Invoice for Order ${order.order_id}`, order_details);
+        console.log('Hold invoice generated:', holdInvoiceData);
+
+        // Check if holdInvoiceData contains the necessary fields
+        if (!holdInvoiceData || !holdInvoiceData.bolt11 || !holdInvoiceData.payment_hash) {
+            throw new Error('Invalid hold invoice data received: ' + JSON.stringify(holdInvoiceData));
+        }
 
         // Save hold invoice data to the database
         const holdInvoiceInsertText = `
@@ -42,24 +54,45 @@ async function addOrderAndGenerateInvoice(orderData: any) {
             VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW() + INTERVAL '1 DAY', 'hold')
             RETURNING *;
         `;
-        await client.query(holdInvoiceInsertText, [order.order_id, holdInvoiceData.bolt11, amount_msat, holdInvoiceData.status, order_details, holdInvoiceData.payment_hash]);
+        const holdInvoiceResult = await client.query(holdInvoiceInsertText, [
+            order.order_id, 
+            holdInvoiceData.bolt11, 
+            amount_msat, 
+            holdInvoiceData.status || 'pending', 
+            order_details, 
+            holdInvoiceData.payment_hash
+        ]);
+        console.log('Hold invoice saved to database:', holdInvoiceResult.rows[0]);
 
-        // Post the full amount invoice for type 1
         let fullInvoiceData = null;
-        if (type === 1) {
-            fullInvoiceData = await postFullAmountInvoice(amount_msat, `Full Amount Invoice for Order ${order.order_id}`, order_details, order.order_id, type);
+        if (type === 1) { // For sell orders
+            console.log('Generating full invoice for sell order');
+            fullInvoiceData = await postFullAmountInvoice(amount_msat, `Full Invoice for Order ${order.order_id}`, order_details, order.order_id, type);
             
-            // Save full amount invoice data to the database
+            if (!fullInvoiceData || !fullInvoiceData.bolt11) {
+                throw new Error('Failed to generate full amount invoice');
+            }
+
+            // Save full invoice data to the database
             const fullInvoiceInsertText = `
                 INSERT INTO invoices (order_id, bolt11, amount_msat, status, description, payment_hash, created_at, expires_at, invoice_type)
                 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW() + INTERVAL '1 DAY', 'full')
                 RETURNING *;
             `;
-            await client.query(fullInvoiceInsertText, [order.order_id, fullInvoiceData.bolt11, amount_msat, fullInvoiceData.status, order_details, fullInvoiceData.payment_hash]);
+            const fullInvoiceResult = await client.query(fullInvoiceInsertText, [
+                order.order_id, 
+                fullInvoiceData.bolt11, 
+                amount_msat, 
+                'pending', 
+                order_details, 
+                fullInvoiceData.payment_hash
+            ]);
+            console.log('Full invoice saved to database:', fullInvoiceResult.rows[0]);
         }
 
         await client.query('COMMIT');
-        return { order, holdInvoice: holdInvoiceData, fullAmountInvoice: fullInvoiceData };
+        console.log('Transaction committed');
+        return { order, holdInvoice: holdInvoiceData, fullInvoice: fullInvoiceData };
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Transaction failed:', error);
@@ -68,7 +101,6 @@ async function addOrderAndGenerateInvoice(orderData: any) {
         client.release();
     }
 }
-
 async function processTakeOrder(orderId: any, holdInvoice: any) {
     const client = await pool.connect();
     try {
@@ -96,7 +128,7 @@ async function processTakeOrder(orderId: any, holdInvoice: any) {
     }
 }
 
-async function generateTakerInvoice(orderId: any, takerDetails: any) {
+async function generateTakerInvoice(orderId, takerDetails, customer_id) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -112,27 +144,11 @@ async function generateTakerInvoice(orderId: any, takerDetails: any) {
         const order = orderTypeResult.rows[0];
         const orderType = order.type;
         const orderAmountMsat = order.amount_msat;
-        let invoiceAmountMsat;
 
-        if (orderType === 0) {
-            // Use the full order amount for type 0
-            invoiceAmountMsat = orderAmountMsat;
-        } else {
-            // Retrieve the original amount from invoices table for type 1
-            const orderDetailsQuery = `SELECT amount_msat FROM invoices WHERE order_id = $1 AND invoice_type = 'full'`;
-            const orderDetailsResult = await client.query(orderDetailsQuery, [orderId]);
-
-            if (orderDetailsResult.rows.length === 0) {
-                throw new Error('No full amount invoice found for this order ID');
-            }
-
-            const orderDetails = orderDetailsResult.rows[0];
-            const amountPercentage = 0.05; // 5% of the amount_msat
-            invoiceAmountMsat = Math.round(orderDetails.amount_msat * amountPercentage);
-        }
-
-        // Generate hold invoice
-        const holdInvoiceData = await postHoldinvoice(invoiceAmountMsat, `Order ${orderId} for Taker`, takerDetails.description);
+        // Generate hold invoice for 5% of the order amount
+        const holdInvoiceAmount = Math.round(orderAmountMsat * 0.05);
+        console.log(`Generating hold invoice for order ${orderId} with amount ${holdInvoiceAmount} msat`);
+        const holdInvoiceData = await postHoldinvoice(holdInvoiceAmount, `Order ${orderId} for Taker`, takerDetails.description);
         
         // Insert hold invoice into the database
         const insertHoldInvoiceText = `
@@ -140,28 +156,48 @@ async function generateTakerInvoice(orderId: any, takerDetails: any) {
             VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'hold', 'taker')
             RETURNING *;
         `;
-        const holdInvoiceResult = await client.query(insertHoldInvoiceText, [orderId, holdInvoiceData.bolt11, invoiceAmountMsat, holdInvoiceData.description, holdInvoiceData.payment_hash]);
+        const holdInvoiceResult = await client.query(insertHoldInvoiceText, [orderId, holdInvoiceData.bolt11, holdInvoiceAmount, holdInvoiceData.description, holdInvoiceData.payment_hash]);
         
         let fullInvoiceData = null;
-        if (orderType === 0) {
-            // Generate full invoice for order type 0
-            fullInvoiceData = await postFullAmountInvoice(orderAmountMsat, `Order ${orderId} Full Amount`, takerDetails.description, orderId, orderType);
+        if (orderType === 1) { // For sell orders
+            try {
+                console.log(`Generating full invoice for sell order ${orderId} with amount ${orderAmountMsat} msat`);
+                fullInvoiceData = await postFullAmountInvoice(orderAmountMsat, `Order ${orderId} Full Amount`, takerDetails.description, orderId, orderType);
 
-            if (!fullInvoiceData || !fullInvoiceData.bolt11) {
-                throw new Error('Failed to generate full amount invoice');
+                if (!fullInvoiceData || !fullInvoiceData.bolt11) {
+                    throw new Error('Failed to generate full amount invoice: Invalid response data');
+                }
+
+                // Insert full invoice into the database
+                const insertFullInvoiceText = `
+                    INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type, user_type)
+                    VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'full', 'taker')
+                    RETURNING *;
+                `;
+                const fullInvoiceResult = await client.query(insertFullInvoiceText, [orderId, fullInvoiceData.bolt11, orderAmountMsat, fullInvoiceData.description, fullInvoiceData.payment_hash]);
+                fullInvoiceData = fullInvoiceResult.rows[0];
+                console.log(`Full invoice inserted into database for order ${orderId}:`, fullInvoiceData);
+            } catch (error) {
+                console.error(`Error generating full invoice for order ${orderId}:`, error);
+                throw error;
             }
-
-            // Insert full invoice into the database
-            const insertFullInvoiceText = `
-                INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type, user_type)
-                VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'full', 'taker')
-                RETURNING *;
-            `;
-            await client.query(insertFullInvoiceText, [orderId, fullInvoiceData.bolt11, orderAmountMsat, fullInvoiceData.description, fullInvoiceData.payment_hash]);
         }
 
+        // Update the order status and taker_customer_id
+        const updateOrderText = `
+            UPDATE orders
+            SET status = 'depositing', taker_customer_id = $1
+            WHERE order_id = $2
+            RETURNING *;
+        `;
+        const updatedOrderResult = await client.query(updateOrderText, [customer_id, orderId]);
+
         await client.query('COMMIT');
-        return { holdInvoice: holdInvoiceResult.rows[0], fullInvoice: fullInvoiceData };
+        return { 
+            order: updatedOrderResult.rows[0],
+            holdInvoice: holdInvoiceResult.rows[0], 
+            fullInvoice: fullInvoiceData 
+        };
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Error in generateTakerInvoice:', error);
@@ -171,33 +207,23 @@ async function generateTakerInvoice(orderId: any, takerDetails: any) {
     }
 }
 
+
 // Monitoring and updating the status
-async function checkAndUpdateOrderStatus(orderId: any, payment_hash: any) {
-    const client = await pool.connect();
+async function checkAndUpdateOrderStatus(orderId, payment_hash) {
     try {
-        client.query('BEGIN');
-        
-        // @ts-expect-error TS(2304): Cannot find name 'queryInvoiceStatus'.
-        const checkInvoiceStatus = await queryInvoiceStatus(payment_hash); // Assume this function checks the payment status
-        if (checkInvoiceStatus === 'paid') {
-            const updateOrderText = `
-                UPDATE orders
-                SET status = 'bonds_locked'
-                WHERE order_id = $1
-                RETURNING *;
-            `;
-            const result = await client.query(updateOrderText, [orderId]);
-            client.query('COMMIT');
-            return result.rows[0];
-        }
-        client.query('ROLLBACK');
+      const checkInvoiceStatus = await queryInvoiceStatus(payment_hash);
+      if (checkInvoiceStatus === 'paid') {
+        const updatedOrder = await prisma.orders.update({
+          where: { order_id: parseInt(orderId) },
+          data: { status: 'bonds_locked' },
+        });
+        return updatedOrder;
+      }
     } catch (error) {
-        client.query('ROLLBACK');
-        throw error;
-    } finally {
-        client.release();
+      console.error('Error in checkAndUpdateOrderStatus:', error);
+      throw error;
     }
-}
+  }
 
 async function handleFiatReceivedAndUpdateOrder(orderId: any) {
     try {

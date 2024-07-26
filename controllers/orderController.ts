@@ -2,15 +2,22 @@ import { addOrderAndGenerateInvoice, processTakeOrder, generateTakerInvoice, che
 import { pool } from '../config/db.js';
 
 //
-export async function createOrder(req: any, res: any) {
+export async function createOrder(req, res) {
+    console.log('Entering createOrder function');
     try {
-        const customer_id = req.user.id;  // Extract customer_id from logged-in user
-        const orderData = { ...req.body, customer_id };  // Include customer_id in order data
+        const customer_id = req.user.id;
+        console.log('Customer ID:', customer_id);
+        
+        const orderData = { ...req.body, customer_id };
+        console.log('Order data to be processed:', orderData);
+        
         const result = await addOrderAndGenerateInvoice(orderData);
+        console.log('Order creation result:', result);
+        
         res.status(201).json(result);
     } catch (error) {
-        // @ts-expect-error TS(2571): Object is of type 'unknown'.
-        res.status(500).json({ error: error.message });
+        console.error('Error in createOrder:', error);
+        res.status(500).json({ error: error.message || 'An unexpected error occurred' });
     }
 }
 

@@ -19,6 +19,8 @@ import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatSer
 import { query, pool } from './config/db.js';
 import dotenv from 'dotenv'
 import submitToMainstayRoutes from './routes/submitToMainstay.js';
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 
 dotenv.config();
 
@@ -81,12 +83,16 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
+  console.log('Received request at /api/holdinvoice');
+  console.log('Request body:', req.body);
   try {
     const { amount_msat, label, description } = req.body;
+    console.log('Extracted values:', { amount_msat, label, description });
     const result = await postHoldinvoice(amount_msat, label, description);
+    console.log('postHoldinvoice result:', result);
     res.json(result);
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
+    console.error('Error in /api/holdinvoice:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -167,7 +173,6 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
 
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
   const { orderId } = req.body;
-  // @ts-expect-error TS(2339): Property 'user' does not exist on type 'Request<{}... Remove this comment to see the full error message
   const userId = req.user.id; // Assuming `req.user` contains the authenticated user's details
 
   try {
@@ -215,27 +220,34 @@ app.use('/api/settle', settleRoutes);
 // Get all orders
 app.get('/api/orders', authenticateJWT, async (req, res) => {
   try {
-    // @ts-expect-error TS(2554): Expected 2 arguments, but got 1.
-    const result = await query('SELECT * FROM orders');
-    res.status(200).json(result.rows);
-  } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    const orders = await prisma.order.findMany();
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    res.status(500).json({ error: 'Failed to fetch orders' });
   }
 });
 
 //Get order by ID
+
+
 app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
-    const result = await query('SELECT * FROM orders WHERE order_id = $1', [orderId]);
-    if (result.rows.length === 0) {
+    const order = await prisma.order.findUnique({
+      where: {
+        order_id: parseInt(orderId)
+      }
+    });
+
+    if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    res.status(200).json(result.rows[0]);
+
+    res.status(200).json(order);
   } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching order:', err);
+    res.status(500).json({ error: 'An error occurred while fetching the order' });
   }
 });
 
@@ -243,14 +255,27 @@ app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
 app.get('/api/invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
-    const result = await query('SELECT * FROM invoices WHERE order_id = $1', [orderId]);
-    if (result.rows.length === 0) {
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        order_id: parseInt(orderId)
+      }
+    });
+
+    if (!invoice) {
       return res.status(404).json({ error: 'Invoice not found' });
     }
-    res.status(200).json(result.rows[0]);
+
+    // Convert BigInt fields to strings
+    const serializedInvoice = JSON.parse(
+      JSON.stringify(invoice, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      )
+    );
+
+    res.status(200).json(serializedInvoice);
   } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching invoice:', err);
+    res.status(500).json({ error: 'An error occurred while fetching the invoice' });
   }
 });
 
@@ -271,14 +296,29 @@ app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
 app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
-    const result = await query('SELECT * FROM invoices WHERE order_id = $1 AND invoice_type = $2', [parseInt(orderId, 10), 'full']);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Full invoice not found' });
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        order_id: parseInt(orderId),
+        invoice_type: 'full'
+      }
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Full invoice not found for this order' });
     }
-    res.status(200).json(result.rows[0]);
+
+    // Convert BigInt to String for JSON serialization
+    const serializedInvoice = {
+      ...invoice,
+      amount_msat: invoice.amount_msat.toString(),
+      created_at: invoice.created_at.toISOString(),
+      expires_at: invoice.expires_at.toISOString(),
+    };
+
+    res.status(200).json({ invoice: serializedInvoice });
   } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching full invoice:', err);
+    res.status(500).json({ error: 'An error occurred while fetching the full invoice' });
   }
 });
 

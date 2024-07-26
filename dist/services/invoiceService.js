@@ -7,82 +7,110 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+import { PrismaClient } from '@prisma/client';
 import fetch from 'node-fetch';
 import https from 'https';
 import { config } from 'dotenv';
-import pkg from 'pg';
-const { Pool } = pkg;
+import axios from 'axios';
 config(); // This line configures dotenv to load the environment variables
-const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
-const MY_RUNE = process.env.RUNE;
-const pool = new Pool({
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: process.env.DB_NAME,
-    password: process.env.DB_PASSWORD,
-    // @ts-expect-error TS(2322): Type 'string | undefined' is not assignable to typ... Remove this comment to see the full error message
-    port: process.env.DB_PORT,
+const prisma = new PrismaClient();
+const agent = new https.Agent({
+    rejectUnauthorized: false
 });
-// creates the hold invoice and 
-function postHoldinvoice(totalAmountMsat, label, description) {
+const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
+const RUNE = process.env.RUNE;
+function postHoldinvoice(amount_msat, description) {
     return __awaiter(this, void 0, void 0, function* () {
-        const amount_msat = Math.round(totalAmountMsat * 0.05); // Calculate 5% of the total amount
-        const data = {
-            amount_msat,
-            label,
-            description,
-            cltv: 770,
-        };
+        const timestamp = Date.now(); // Generate a unique timestamp
+        const label = `invoice_${timestamp}`; // Create a unique label using the timestamp
+        console.log('Posting hold invoice with:', { amount_msat, label, description });
+        console.log('Using RUNE:', RUNE); // Log the rune to ensure it is correctly set
         try {
-            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
-                method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'Rune': MY_RUNE,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data),
-                agent: new https.Agent({ rejectUnauthorized: false }),
-            });
-            if (!response.ok) {
-                throw new Error(`Error: ${response.status}`);
+            if (!LIGHTNING_NODE_API_URL || !RUNE) {
+                throw new Error('LIGHTNING_NODE_API_URL or RUNE is not defined');
             }
-            return yield response.json();
+            const response = yield axios.post(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
+                amount_msat,
+                label,
+                description
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Rune': RUNE
+                },
+                httpsAgent: agent // Ensure the agent is included here
+            });
+            console.log('Hold invoice response:', response.data);
+            if (!response.data || !response.data.bolt11 || !response.data.payment_hash) {
+                throw new Error('Invalid response from Lightning Node API: ' + JSON.stringify(response.data));
+            }
+            // Return the invoice data with invoice_type set to 'makerHold'
+            return {
+                bolt11: response.data.bolt11,
+                payment_hash: response.data.payment_hash,
+                status: 'unpaid',
+                invoice_type: 'makerHold' // Ensure this field is included
+            };
         }
         catch (error) {
-            console.error('Failed to post invoice:', error);
+            console.error('Error posting hold invoice:', error.response ? error.response.data : error.message);
             throw error;
         }
     });
 }
-// looks up holdinvoices and returns status
+// Remaining functions remain unchanged
 function holdInvoiceLookup(payment_hash) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
+            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Rune': MY_RUNE,
+                    'Rune': RUNE,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ payment_hash }),
-                agent: new https.Agent({ rejectUnauthorized: false }),
+                agent: new https.Agent({ rejectUnauthorized: false })
             });
             if (!response.ok) {
                 throw new Error(`HTTP Error: ${response.status}`);
             }
-            const invoiceData = yield response.json();
-            console.log('Invoice Data:', invoiceData);
-            return invoiceData;
+            const data = yield response.json();
+            if (data.invoices && data.invoices.length > 0) {
+                const invoice = data.invoices[0];
+                // Check if the invoice status is 'paid' and update the database
+                if (invoice.status === 'paid') {
+                    yield updateInvoiceStatus(payment_hash, 'paid');
+                }
+                return invoice;
+            }
+            else {
+                throw new Error('Invoice not found');
+            }
         }
         catch (error) {
-            console.error('Failed to lookup hold invoice:', error);
+            console.error('Error fetching invoice:', error);
             throw error;
         }
     });
 }
-// syncs the invoice status from lightning with the database
+function updateInvoiceStatus(payment_hash, status) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const updatedInvoice = yield prisma.invoice.updateMany({
+                where: { payment_hash },
+                data: { status },
+            });
+            console.log(`Updated invoice status for payment_hash ${payment_hash}: ${status}`);
+            return updatedInvoice;
+        }
+        catch (error) {
+            console.error('Failed to update invoice status:', error);
+            throw error;
+        }
+    });
+}
+// Syncs the invoice status from lightning with the database
 function syncInvoicesWithNode() {
     return __awaiter(this, void 0, void 0, function* () {
         const agent = new https.Agent({ rejectUnauthorized: false });
@@ -91,7 +119,7 @@ function syncInvoicesWithNode() {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Rune': MY_RUNE,
+                    'Rune': RUNE,
                 },
                 agent
             });
@@ -100,66 +128,62 @@ function syncInvoicesWithNode() {
             }
             const { invoices } = yield response.json();
             console.log('Fetched invoices from node:', invoices);
-            const client = yield pool.connect();
-            try {
-                yield client.query('BEGIN');
-                const orderUpdates = {};
-                for (const invoice of invoices) {
-                    console.log(`Processing invoice with payment_hash: ${invoice.payment_hash}`);
-                    const res = yield client.query('SELECT status, order_id, invoice_type FROM invoices WHERE payment_hash = $1', [invoice.payment_hash]);
-                    if (res.rows.length > 0) {
-                        const { status, order_id, invoice_type } = res.rows[0];
-                        let newStatus = invoice.status;
-                        // Additional check for hold invoices
-                        if (invoice_type === 'hold') {
-                            console.log(`Checking hold invoice with payment_hash: ${invoice.payment_hash}`);
-                            const holdState = yield holdInvoiceLookup(invoice.payment_hash);
-                            console.log(`Hold state for invoice with payment_hash ${invoice.payment_hash}:`, holdState);
-                            if (holdState.state === 'ACCEPTED' || holdState.state === 'settled') {
-                                newStatus = 'ACCEPTED';
-                            }
-                            else if (holdState.state === 'canceled') {
-                                newStatus = 'canceled';
-                            }
+            const orderUpdates = {};
+            for (const invoice of invoices) {
+                console.log(`Processing invoice with payment_hash: ${invoice.payment_hash}`);
+                const res = yield prisma.invoice.findMany({
+                    where: { payment_hash: invoice.payment_hash },
+                    select: { status, order_id, invoice_type }
+                });
+                if (res.length > 0) {
+                    const { status, order_id, invoice_type } = res[0];
+                    let newStatus = invoice.status;
+                    // Additional check for hold invoices
+                    if (invoice_type === 'hold') {
+                        console.log(`Checking hold invoice with payment_hash: ${invoice.payment_hash}`);
+                        const holdState = yield holdInvoiceLookup(invoice.payment_hash);
+                        console.log(`Hold state for invoice with payment_hash ${invoice.payment_hash}:`, holdState);
+                        if (holdState.state === 'ACCEPTED' || holdState.state === 'settled') {
+                            newStatus = 'ACCEPTED';
                         }
-                        if (status !== newStatus) {
-                            console.log(`Updating invoice status for payment_hash ${invoice.payment_hash} from ${status} to ${newStatus}`);
-                            yield client.query('UPDATE invoices SET status = $1 WHERE payment_hash = $2', [newStatus, invoice.payment_hash]);
-                            console.log(`Invoice with payment_hash ${invoice.payment_hash} updated to status: ${newStatus}`);
+                        else if (holdState.state === 'canceled') {
+                            newStatus = 'canceled';
                         }
-                        else {
-                            console.log(`Invoice with payment_hash ${invoice.payment_hash} already has status: ${newStatus}`);
-                        }
-                        if (!orderUpdates[order_id]) {
-                            orderUpdates[order_id] = [];
-                        }
-                        orderUpdates[order_id].push(newStatus);
+                    }
+                    if (status !== newStatus) {
+                        console.log(`Updating invoice status for payment_hash ${invoice.payment_hash} from ${status} to ${newStatus}`);
+                        yield prisma.invoice.updateMany({
+                            where: { payment_hash: invoice.payment_hash },
+                            data: { status: newStatus }
+                        });
+                        console.log(`Invoice with payment_hash ${invoice.payment_hash} updated to status: ${newStatus}`);
                     }
                     else {
-                        console.log(`No matching record found in the database for invoice with payment_hash ${invoice.payment_hash}`);
+                        console.log(`Invoice with payment_hash ${invoice.payment_hash} already has status: ${newStatus}`);
                     }
+                    if (!orderUpdates[order_id]) {
+                        orderUpdates[order_id] = [];
+                    }
+                    orderUpdates[order_id].push(newStatus);
                 }
-                for (const order_id in orderUpdates) {
-                    const statuses = orderUpdates[order_id];
-                    const allHoldInvoices = statuses.filter((status) => status === 'ACCEPTED').length === 2;
-                    const fullInvoicePaid = statuses.includes('ACCEPTED');
-                    if (allHoldInvoices && fullInvoicePaid) {
-                        yield client.query('UPDATE orders SET status = $1 WHERE order_id = $2', ['chat_open', order_id]);
-                        console.log(`Order ${order_id} updated to chat_open`);
-                    }
-                    else {
-                        console.log(`Order ${order_id} does not meet the criteria for chat_open`);
-                    }
+                else {
+                    console.log(`No matching record found in the database for invoice with payment_hash ${invoice.payment_hash}`);
                 }
-                yield client.query('COMMIT');
             }
-            catch (error) {
-                console.error('Error while syncing invoices:', error);
-                yield client.query('ROLLBACK');
-                throw error;
-            }
-            finally {
-                client.release();
+            for (const order_id in orderUpdates) {
+                const statuses = orderUpdates[order_id];
+                const allHoldInvoices = statuses.filter((status) => status === 'ACCEPTED').length === 2;
+                const fullInvoicePaid = statuses.includes('ACCEPTED');
+                if (allHoldInvoices && fullInvoicePaid) {
+                    yield prisma.order.update({
+                        where: { order_id: parseInt(order_id) },
+                        data: { status: 'chat_open' }
+                    });
+                    console.log(`Order ${order_id} updated to chat_open`);
+                }
+                else {
+                    console.log(`Order ${order_id} does not meet the criteria for chat_open`);
+                }
             }
         }
         catch (error) {
@@ -168,8 +192,7 @@ function syncInvoicesWithNode() {
         }
     });
 }
-// syncs payouts with node. 
-// not sure where this is used so worth investigating if still needed or replaced by above
+// Syncs payouts with node. 
 function syncPayoutsWithNode() {
     return __awaiter(this, void 0, void 0, function* () {
         const agent = new https.Agent({
@@ -179,7 +202,7 @@ function syncPayoutsWithNode() {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
-                'Rune': MY_RUNE,
+                'Rune': RUNE,
             },
             agent
         });
@@ -187,26 +210,25 @@ function syncPayoutsWithNode() {
             throw new Error(`HTTP Error: ${response.status}`);
         }
         const { invoices } = yield response.json();
-        const client = yield pool.connect();
         try {
-            yield client.query('BEGIN');
             for (const invoice of invoices) {
                 const ln_invoice = invoice.bolt11;
-                const res = yield client.query('SELECT status FROM payouts WHERE ln_invoice = $1', [ln_invoice]);
-                if (res.rows.length > 0 && res.rows[0].status !== invoice.status) {
-                    yield client.query('UPDATE payouts SET status = $1 WHERE ln_invoice = $2', [invoice.status, ln_invoice]);
+                const res = yield prisma.payout.findMany({
+                    where: { ln_invoice },
+                    select: { status }
+                });
+                if (res.length > 0 && res[0].status !== invoice.status) {
+                    yield prisma.payout.updateMany({
+                        where: { ln_invoice },
+                        data: { status: invoice.status }
+                    });
                     console.log(`Payout status updated for ln_invoice ${ln_invoice}`);
                 }
             }
-            yield client.query('COMMIT');
         }
         catch (error) {
             console.error('Error updating payout statuses:', error);
-            yield client.query('ROLLBACK');
             throw error;
-        }
-        finally {
-            client.release();
         }
     });
 }
@@ -225,7 +247,7 @@ function generateBolt11Invoice(amount_msat, label, description, type, premium) {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Rune': MY_RUNE,
+                    'Rune': RUNE,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(data),
@@ -256,18 +278,21 @@ function postFullAmountInvoice(amount_msat, label, description, orderId, orderTy
             cltv: 770,
         };
         try {
+            console.log(`Attempting to create full invoice for order ${orderId}:`, data);
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Rune': MY_RUNE,
+                    'Rune': RUNE,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(data),
                 agent: new https.Agent({ rejectUnauthorized: false })
             });
             if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
+                const errorBody = yield response.text();
+                console.error(`Error response from Lightning node: ${response.status} ${response.statusText}`, errorBody);
+                throw new Error(`HTTP Error: ${response.status} - ${errorBody}`);
             }
             const invoiceData = yield response.json();
             if (!invoiceData.bolt11) {
@@ -285,34 +310,35 @@ function postFullAmountInvoice(amount_msat, label, description, orderId, orderTy
 }
 function handleFiatReceived(orderId) {
     return __awaiter(this, void 0, void 0, function* () {
-        const client = yield pool.connect();
         try {
-            yield client.query('BEGIN');
-            const updateResult = yield updatePayoutStatus(client, orderId, 'fiat_received');
-            if (updateResult.rowCount === 0) {
-                throw new Error('No corresponding payout found or update failed');
-            }
-            const payoutDetails = yield client.query(`SELECT ln_invoice FROM payouts WHERE order_id = $1`, [orderId]);
-            if (payoutDetails.rows.length === 0) {
-                throw new Error('No payout details found for this order');
-            }
-            const payoutInvoice = payoutDetails.rows[0].ln_invoice;
-            console.log("Payout LN Invoice:", payoutInvoice);
-            const paymentResult = yield payInvoice(payoutInvoice);
-            if (!paymentResult || paymentResult.status !== 'complete') {
-                throw new Error('Failed to pay payout invoice');
-            }
-            console.log("Successfully paid payout invoice:", payoutInvoice);
-            yield client.query('COMMIT');
+            yield prisma.$transaction((prisma) => __awaiter(this, void 0, void 0, function* () {
+                const updateResult = yield prisma.payout.updateMany({
+                    where: { order_id: orderId, status: 'fiat_received' },
+                    data: { status: 'fiat_received' }
+                });
+                if (updateResult.count === 0) {
+                    throw new Error('No corresponding payout found or update failed');
+                }
+                const payoutDetails = yield prisma.payout.findMany({
+                    where: { order_id: orderId },
+                    select: { ln_invoice }
+                });
+                if (payoutDetails.length === 0) {
+                    throw new Error('No payout details found for this order');
+                }
+                const payoutInvoice = payoutDetails[0].ln_invoice;
+                console.log("Payout LN Invoice:", payoutInvoice);
+                const paymentResult = yield payInvoice(payoutInvoice);
+                if (!paymentResult || paymentResult.status !== 'complete') {
+                    throw new Error('Failed to pay payout invoice');
+                }
+                console.log("Successfully paid payout invoice:", payoutInvoice);
+            }));
             console.log("Fiat received and payout processed successfully.");
         }
         catch (error) {
-            yield client.query('ROLLBACK');
             console.error("Error processing fiat received:", error);
             throw error;
-        }
-        finally {
-            client.release();
         }
     });
 }
@@ -323,7 +349,7 @@ function payInvoice(lnInvoice) {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Rune': MY_RUNE,
+                    'Rune': RUNE,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ bolt11: lnInvoice }),
@@ -340,11 +366,14 @@ function payInvoice(lnInvoice) {
         }
     });
 }
-function updatePayoutStatus(client, orderId, status) {
+function updatePayoutStatus(orderId, status) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const result = yield client.query('UPDATE payouts SET status = $1 WHERE order_id = $2 RETURNING *', [status, orderId]);
-            if (result.rows.length === 0) {
+            const result = yield prisma.payout.updateMany({
+                where: { order_id: orderId },
+                data: { status }
+            });
+            if (result.count === 0) {
                 throw new Error('Failed to update payout status');
             }
             return result;
@@ -361,7 +390,7 @@ function settleHoldInvoice(lnInvoice) {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Rune': MY_RUNE,
+                    'Rune': RUNE,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ payment_hash: lnInvoice }),
@@ -380,18 +409,17 @@ function settleHoldInvoice(lnInvoice) {
 }
 function checkAndProcessPendingPayouts() {
     return __awaiter(this, void 0, void 0, function* () {
-        const client = yield pool.connect();
         try {
-            const result = yield client.query("SELECT order_id FROM payouts WHERE status = 'fiat_received'");
-            for (const row of result.rows) {
+            const result = yield prisma.payout.findMany({
+                where: { status: 'fiat_received' },
+                select: { order_id }
+            });
+            for (const row of result) {
                 yield handleFiatReceived(row.order_id);
             }
         }
         catch (error) {
             console.error('Error processing pending payouts:', error);
-        }
-        finally {
-            client.release();
         }
     });
 }
@@ -402,7 +430,7 @@ const settleHoldInvoiceByHash = (payment_hash) => __awaiter(void 0, void 0, void
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
-                'Rune': MY_RUNE,
+                'Rune': RUNE,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({ payment_hash }),
@@ -421,34 +449,35 @@ const settleHoldInvoiceByHash = (payment_hash) => __awaiter(void 0, void 0, void
     }
 });
 const settleHoldInvoicesByOrderIdService = (orderId) => __awaiter(void 0, void 0, void 0, function* () {
-    const client = yield pool.connect();
     try {
-        yield client.query('BEGIN');
-        // Fetch all hold invoices for the order
-        const invoicesResult = yield client.query('SELECT payment_hash FROM invoices WHERE order_id = $1 AND invoice_type = $2 AND status = $3', [orderId, 'hold', 'ACCEPTED']);
-        const settlePromises = invoicesResult.rows.map((invoice) => __awaiter(void 0, void 0, void 0, function* () {
-            const settleData = yield settleHoldInvoiceByHash(invoice.payment_hash);
-            // Update the invoice status to 'settled' in the database
-            yield client.query('UPDATE invoices SET status = $1 WHERE payment_hash = $2', ['settled', invoice.payment_hash]);
-            return settleData;
+        yield prisma.$transaction((prisma) => __awaiter(void 0, void 0, void 0, function* () {
+            // Fetch all hold invoices for the order
+            const invoices = yield prisma.invoice.findMany({
+                where: { order_id: orderId, invoice_type: 'hold', status: 'ACCEPTED' },
+                select: { payment_hash }
+            });
+            const settlePromises = invoices.map((invoice) => __awaiter(void 0, void 0, void 0, function* () {
+                const settleData = yield settleHoldInvoiceByHash(invoice.payment_hash);
+                // Update the invoice status to 'settled' in the database
+                yield prisma.invoice.updateMany({
+                    where: { payment_hash: invoice.payment_hash },
+                    data: { status: 'settled' }
+                });
+                return settleData;
+            }));
+            const settledInvoices = yield Promise.all(settlePromises);
+            return settledInvoices;
         }));
-        const settledInvoices = yield Promise.all(settlePromises);
-        yield client.query('COMMIT');
-        return settledInvoices;
     }
     catch (error) {
-        yield client.query('ROLLBACK');
         throw error;
     }
-    finally {
-        client.release();
-    }
 });
-// generic chat functions that are not currently being used.
+// Generic chat functions that are not currently being used.
 // placeholders for alerting users when their chatroom is open
 function notifyUsers(orderId) {
     return __awaiter(this, void 0, void 0, function* () {
-        console.log(`Chatroom is available for Order ID: ${orderId} for both Maker and Taker`);
+        console.log(`Chatroom is available for Order ID: ${orderId} for both y and Taker`);
     });
 }
 function handleChatroomTrigger(orderId) {
@@ -461,7 +490,7 @@ function handleChatroomTrigger(orderId) {
         return chatId;
     });
 }
-// chatroom code that hooks into the chat app and returns the chatroom when invoices are marked as paid for the orderId
+// Chatroom code that hooks into the chat app and returns the chatroom when invoices are marked as paid for the orderId
 const CHAT_APP_URL = 'http://localhost:3456';
 function checkInvoicesAndCreateChatroom(orderId) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -471,7 +500,7 @@ function checkInvoicesAndCreateChatroom(orderId) {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Rune': MY_RUNE,
+                    'Rune': RUNE,
                 },
                 agent
             });
@@ -480,11 +509,12 @@ function checkInvoicesAndCreateChatroom(orderId) {
                 throw new Error(`HTTP Error: ${response.status}`);
             }
             const { invoices } = yield response.json();
-            const client = yield pool.connect();
             try {
-                yield client.query('BEGIN');
-                const invoiceStatuses = yield client.query('SELECT payment_hash, status, invoice_type FROM invoices WHERE order_id = $1', [orderId]);
-                const invoiceMap = new Map(invoiceStatuses.rows.map(row => [row.payment_hash, row]));
+                const invoiceStatuses = yield prisma.invoice.findMany({
+                    where: { order_id: orderId },
+                    select: { payment_hash, status, invoice_type }
+                });
+                const invoiceMap = new Map(invoiceStatuses.map(row => [row.payment_hash, row]));
                 let allHoldInvoices = true;
                 let fullInvoicePaid = false;
                 let holdCount = 0;
@@ -516,13 +546,18 @@ function checkInvoicesAndCreateChatroom(orderId) {
                         }
                     }
                     if (dbInvoice.status !== invoice.status) {
-                        yield client.query('UPDATE invoices SET status = $1 WHERE payment_hash = $2 AND order_id = $3', [invoice.status, invoice.payment_hash, orderId]);
+                        yield prisma.invoice.updateMany({
+                            where: { payment_hash: invoice.payment_hash, order_id: orderId },
+                            data: { status: invoice.status }
+                        });
                         console.log(`Invoice with payment_hash ${invoice.payment_hash} updated to '${invoice.status}'`);
                     }
                 }
-                yield client.query('COMMIT');
                 if (holdCount >= 2 && fullInvoicePaid) {
-                    yield client.query('UPDATE orders SET status = $1 WHERE order_id = $2', ['chat_open', orderId]);
+                    yield prisma.order.update({
+                        where: { order_id: orderId },
+                        data: { status: 'chat_open' }
+                    });
                     const chatroomUrl = yield createChatroom(orderId);
                     console.log(`Chatroom can be created for Order ID: ${orderId}. Redirect to: ${chatroomUrl}`);
                     return chatroomUrl;
@@ -534,12 +569,8 @@ function checkInvoicesAndCreateChatroom(orderId) {
                 }
             }
             catch (dbError) {
-                yield client.query('ROLLBACK');
                 console.error('Database transaction error:', dbError);
                 throw dbError;
-            }
-            finally {
-                client.release();
             }
         }
         catch (error) {
@@ -555,48 +586,48 @@ function createChatroom(orderId) {
 }
 function updateOrderStatus(orderId, status) {
     return __awaiter(this, void 0, void 0, function* () {
-        const client = yield pool.connect();
         try {
-            const result = yield client.query('UPDATE orders SET status = $1 WHERE order_id = $2 RETURNING *', [status, orderId]);
-            if (result.rows.length === 0) {
-                throw new Error('Failed to update order status');
-            }
-            return result.rows[0];
+            const result = yield prisma.order.update({
+                where: { order_id: orderId },
+                data: { status }
+            });
+            return result;
         }
         catch (error) {
             throw error;
-        }
-        finally {
-            client.release();
         }
     });
 }
 function getHoldInvoicesByOrderId(orderId) {
     return __awaiter(this, void 0, void 0, function* () {
-        const client = yield pool.connect();
         try {
-            const result = yield client.query('SELECT payment_hash FROM invoices WHERE order_id = $1 AND invoice_type = $2 AND status = $3', [orderId, 'hold', 'ACCEPTED']);
-            return result.rows.map(row => row.payment_hash);
+            const result = yield prisma.invoice.findMany({
+                where: { order_id: orderId, invoice_type: 'hold', status: 'ACCEPTED' },
+                select: { payment_hash }
+            });
+            return result.map(row => row.payment_hash);
         }
         catch (error) {
             throw error;
-        }
-        finally {
-            client.release();
         }
     });
 }
 function settleHoldInvoices(orderId) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            // Update order status to 'trade_complete'
-            yield updateOrderStatus(orderId, 'trade_complete');
-            // Get all hold invoices for the order
-            const holdInvoices = yield getHoldInvoicesByOrderId(orderId);
-            const settlePromises = holdInvoices.map(paymentHash => settleHoldInvoice(paymentHash));
-            // Settle all hold invoices
-            const settledInvoices = yield Promise.all(settlePromises);
-            return settledInvoices;
+            yield prisma.$transaction((prisma) => __awaiter(this, void 0, void 0, function* () {
+                // Update order status to 'trade_complete'
+                yield prisma.order.update({
+                    where: { order_id: orderId },
+                    data: { status: 'trade_complete' }
+                });
+                // Get all hold invoices for the order
+                const holdInvoices = yield getHoldInvoicesByOrderId(orderId);
+                const settlePromises = holdInvoices.map(paymentHash => settleHoldInvoice(paymentHash));
+                // Settle all hold invoices
+                const settledInvoices = yield Promise.all(settlePromises);
+                return settledInvoices;
+            }));
         }
         catch (error) {
             throw error;
@@ -618,7 +649,7 @@ function generateInvoice(amount_msat, description, label) {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Rune': MY_RUNE,
+                    'Rune': RUNE,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(data),
@@ -654,7 +685,7 @@ export const checkInvoiceStatus = (payment_hash) => __awaiter(void 0, void 0, vo
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
-                'Rune': MY_RUNE,
+                'Rune': RUNE,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({ payment_hash }),
