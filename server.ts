@@ -174,31 +174,27 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
 
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
   const { orderId } = req.body;
-  const userId = req.user.id; // Assuming `req.user` contains the authenticated user's details
+  const userId = req.user.id;
 
   try {
     // Fetch the order details
-    const orderResult = await query('SELECT * FROM orders WHERE order_id = $1', [orderId]);
-    if (orderResult.rows.length === 0) {
+    const order = await prisma.order.findUnique({
+      where: { order_id: parseInt(orderId) },
+    });
+
+    if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    const order = orderResult.rows[0];
-    console.log('Order details:', order);
-    console.log('User ID:', userId);
-
     // Check if the user is the maker or taker of the order
-    // @ts-expect-error TS(2339): Property 'customer_id' does not exist on type 'any... Remove this comment to see the full error message
     if (order.customer_id !== userId && order.taker_customer_id !== userId) {
       return res.status(403).json({ message: 'You are not authorized to access this chatroom' });
     }
 
     // Proceed to create or check chatroom
-    // @ts-expect-error TS(2339): Property 'makeOfferUrl' does not exist on type '{ ... Remove this comment to see the full error message
     const { makeOfferUrl, acceptOfferUrl } = await checkAndCreateChatroom(orderId);
     res.status(200).json({ makeChatUrl: makeOfferUrl, acceptChatUrl: acceptOfferUrl });
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Failed to create chatroom', error: error.message });
   }
 });
@@ -383,15 +379,20 @@ app.post('/api/get-invoice', async (req, res) => {
   }
 
   try {
-    const query = 'SELECT invoice, payment_hash, status FROM users WHERE username = $1';
-    const values = [username];
-    const { rows } = await pool.query(query, values);
+    const user = await prisma.user.findUnique({
+      where: { username },
+      select: {
+        invoice: true,
+        payment_hash: true,
+        status: true,
+      },
+    });
 
-    if (rows.length === 0) {
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const { invoice, payment_hash, status } = rows[0];
+    const { invoice, payment_hash, status } = user;
     res.status(200).json({ invoice, payment_hash, status });
   } catch (error) {
     console.error('Error fetching invoice:', error);

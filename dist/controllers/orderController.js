@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { addOrderAndGenerateInvoice, generateTakerInvoice, checkAndUpdateOrderStatus } from '../services/orderService.js';
-import { pool } from '../config/db.js';
+import { prisma } from '../config/db.js'; // Import Prisma client
 //
 export function createOrder(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -34,31 +34,15 @@ export function takeOrder(req, res) {
         const customer_id = req.user.id; // Extract customer ID from authenticated user
         try {
             // Generate hold invoice for the taker
-            // @ts-expect-error TS(2554): Expected 2 arguments, but got 3.
-            const invoice = yield generateTakerInvoice(orderId, takerDetails, customer_id); // Pass customer_id
-            // Update the taker_customer_id in the orders table
-            const client = yield pool.connect();
-            try {
-                yield client.query('BEGIN');
-                const updateQuery = `
-                UPDATE orders
-                SET taker_customer_id = $1
-                WHERE order_id = $2
-            `;
-                yield client.query(updateQuery, [customer_id, orderId]);
-                yield client.query('COMMIT');
-            }
-            catch (err) {
-                yield client.query('ROLLBACK');
-                throw err;
-            }
-            finally {
-                client.release();
-            }
+            const invoice = yield generateTakerInvoice(orderId, takerDetails, customer_id);
+            // Update the taker_customer_id in the orders table using Prisma
+            yield prisma.order.update({
+                where: { order_id: orderId },
+                data: { taker_customer_id: customer_id }
+            });
             res.status(201).json({ message: "Invoice generated for taker", invoice });
         }
         catch (error) {
-            // @ts-expect-error TS(2571): Object is of type 'unknown'.
             res.status(500).json({ error: error.message });
         }
     });
