@@ -1,15 +1,10 @@
-import { postHoldinvoice, generateBolt11Invoice, postFullAmountInvoice,  handleFiatReceived } from './invoiceService.js'; 
-import { pool } from '../config/db.js'; 
+import { postHoldinvoice, generateBolt11Invoice, postFullAmountInvoice, handleFiatReceived } from './invoiceService.js';
 import { config } from 'dotenv';
 import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
-config();
 
-/**
- * Add a new order and generate an invoice.
- * @param {Object} orderData - The data for the order including additional fields.
- * @returns {Promise<Object>} - The created order and invoice data.
- */
+config();
+const prisma = new PrismaClient();
+
 async function addOrderAndGenerateInvoice(orderData) {
     console.log('Starting addOrderAndGenerateInvoice with data:', orderData);
     const {
@@ -23,19 +18,20 @@ async function addOrderAndGenerateInvoice(orderData) {
         premium = 0
     } = orderData;
 
-    const client = await pool.connect();
     try {
-        await client.query('BEGIN');
-        console.log('Transaction begun');
-
         // Insert the order into the database
-        const orderInsertText = `
-            INSERT INTO orders (customer_id, order_details, amount_msat, currency, payment_method, status, type, premium, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-            RETURNING *;
-        `;
-        const orderResult = await client.query(orderInsertText, [customer_id, order_details, amount_msat, currency, payment_method, status, type, premium]);
-        const order = orderResult.rows[0];
+        const order = await prisma.order.create({
+            data: {
+                customer_id,
+                order_details,
+                amount_msat,
+                currency,
+                payment_method,
+                status,
+                type,
+                premium
+            }
+        });
         console.log('Order inserted:', order);
 
         // Post the hold invoice
@@ -43,26 +39,24 @@ async function addOrderAndGenerateInvoice(orderData) {
         const holdInvoiceData = await postHoldinvoice(amount_msat, `Hold Invoice for Order ${order.order_id}`, order_details);
         console.log('Hold invoice generated:', holdInvoiceData);
 
-        // Check if holdInvoiceData contains the necessary fields
         if (!holdInvoiceData || !holdInvoiceData.bolt11 || !holdInvoiceData.payment_hash) {
             throw new Error('Invalid hold invoice data received: ' + JSON.stringify(holdInvoiceData));
         }
 
         // Save hold invoice data to the database
-        const holdInvoiceInsertText = `
-            INSERT INTO invoices (order_id, bolt11, amount_msat, status, description, payment_hash, created_at, expires_at, invoice_type)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW() + INTERVAL '1 DAY', 'hold')
-            RETURNING *;
-        `;
-        const holdInvoiceResult = await client.query(holdInvoiceInsertText, [
-            order.order_id, 
-            holdInvoiceData.bolt11, 
-            amount_msat, 
-            holdInvoiceData.status || 'pending', 
-            order_details, 
-            holdInvoiceData.payment_hash
-        ]);
-        console.log('Hold invoice saved to database:', holdInvoiceResult.rows[0]);
+        const holdInvoice = await prisma.invoice.create({
+            data: {
+                order_id: order.order_id,
+                bolt11: holdInvoiceData.bolt11,
+                amount_msat,
+                status: holdInvoiceData.status || 'pending',
+                description: order_details,
+                payment_hash: holdInvoiceData.payment_hash,
+                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
+                invoice_type: 'hold'
+            }
+        });
+        console.log('Hold invoice saved to database:', holdInvoice);
 
         let fullInvoiceData = null;
         if (type === 1) { // For sell orders
@@ -74,74 +68,53 @@ async function addOrderAndGenerateInvoice(orderData) {
             }
 
             // Save full invoice data to the database
-            const fullInvoiceInsertText = `
-                INSERT INTO invoices (order_id, bolt11, amount_msat, status, description, payment_hash, created_at, expires_at, invoice_type)
-                VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW() + INTERVAL '1 DAY', 'full')
-                RETURNING *;
-            `;
-            const fullInvoiceResult = await client.query(fullInvoiceInsertText, [
-                order.order_id, 
-                fullInvoiceData.bolt11, 
-                amount_msat, 
-                'pending', 
-                order_details, 
-                fullInvoiceData.payment_hash
-            ]);
-            console.log('Full invoice saved to database:', fullInvoiceResult.rows[0]);
+            const fullInvoice = await prisma.invoice.create({
+                data: {
+                    order_id: order.order_id,
+                    bolt11: fullInvoiceData.bolt11,
+                    amount_msat,
+                    status: 'pending',
+                    description: order_details,
+                    payment_hash: fullInvoiceData.payment_hash,
+                    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
+                    invoice_type: 'full'
+                }
+            });
+            console.log('Full invoice saved to database:', fullInvoice);
         }
 
-        await client.query('COMMIT');
-        console.log('Transaction committed');
         return { order, holdInvoice: holdInvoiceData, fullInvoice: fullInvoiceData };
     } catch (error) {
-        await client.query('ROLLBACK');
         console.error('Transaction failed:', error);
         throw error;
-    } finally {
-        client.release();
     }
 }
-async function processTakeOrder(orderId: any, holdInvoice: any) {
-    const client = await pool.connect();
+
+async function processTakeOrder(orderId: number, holdInvoice: any) {
     try {
-        await client.query('BEGIN');
-
-        // Validate hold invoice
-
         // Update the order to mark as taken
-        const updateOrderText = `
-          UPDATE orders
-          SET status = 'depositing'
-          WHERE order_id = $1
-          RETURNING *;
-        `;
-        const updateResult = await client.query(updateOrderText, [orderId]);
-        const updatedOrder = updateResult.rows[0];
+        const updatedOrder = await prisma.order.update({
+            where: { order_id: orderId },
+            data: { status: 'depositing' }
+        });
 
-        await client.query('COMMIT');
         return { message: "deposit in progress", order: updatedOrder };
     } catch (error) {
-        await client.query('ROLLBACK');
         throw error;
-    } finally {
-        client.release();
     }
 }
 
-async function generateTakerInvoice(orderId, takerDetails, customer_id) {
-    const client = await pool.connect();
+async function generateTakerInvoice(orderId: number, takerDetails: any, customer_id: number) {
     try {
-        await client.query('BEGIN');
-        
         // Retrieve the order type and amount from orders table
-        const orderTypeQuery = `SELECT type, amount_msat FROM orders WHERE order_id = $1`;
-        const orderTypeResult = await client.query(orderTypeQuery, [orderId]);
-        
-        if (orderTypeResult.rows.length === 0) {
+        const order = await prisma.order.findUnique({
+            where: { order_id: orderId }
+        });
+
+        if (!order) {
             throw new Error('No order found for this order ID');
         }
 
-        const order = orderTypeResult.rows[0];
         const orderType = order.type;
         const orderAmountMsat = order.amount_msat;
 
@@ -151,12 +124,19 @@ async function generateTakerInvoice(orderId, takerDetails, customer_id) {
         const holdInvoiceData = await postHoldinvoice(holdInvoiceAmount, `Order ${orderId} for Taker`, takerDetails.description);
         
         // Insert hold invoice into the database
-        const insertHoldInvoiceText = `
-            INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type, user_type)
-            VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'hold', 'taker')
-            RETURNING *;
-        `;
-        const holdInvoiceResult = await client.query(insertHoldInvoiceText, [orderId, holdInvoiceData.bolt11, holdInvoiceAmount, holdInvoiceData.description, holdInvoiceData.payment_hash]);
+        const holdInvoice = await prisma.invoice.create({
+            data: {
+                order_id: orderId,
+                bolt11: holdInvoiceData.bolt11,
+                amount_msat: holdInvoiceAmount,
+                description: holdInvoiceData.description,
+                status: 'pending',
+                payment_hash: holdInvoiceData.payment_hash,
+                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
+                invoice_type: 'hold',
+                user_type: 'taker'
+            }
+        });
         
         let fullInvoiceData = null;
         if (orderType === 1) { // For sell orders
@@ -169,13 +149,19 @@ async function generateTakerInvoice(orderId, takerDetails, customer_id) {
                 }
 
                 // Insert full invoice into the database
-                const insertFullInvoiceText = `
-                    INSERT INTO invoices (order_id, bolt11, amount_msat, description, status, payment_hash, created_at, expires_at, invoice_type, user_type)
-                    VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW() + INTERVAL '1 DAY', 'full', 'taker')
-                    RETURNING *;
-                `;
-                const fullInvoiceResult = await client.query(insertFullInvoiceText, [orderId, fullInvoiceData.bolt11, orderAmountMsat, fullInvoiceData.description, fullInvoiceData.payment_hash]);
-                fullInvoiceData = fullInvoiceResult.rows[0];
+                fullInvoiceData = await prisma.invoice.create({
+                    data: {
+                        order_id: orderId,
+                        bolt11: fullInvoiceData.bolt11,
+                        amount_msat: orderAmountMsat,
+                        description: fullInvoiceData.description,
+                        status: 'pending',
+                        payment_hash: fullInvoiceData.payment_hash,
+                        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
+                        invoice_type: 'full',
+                        user_type: 'taker'
+                    }
+                });
                 console.log(`Full invoice inserted into database for order ${orderId}:`, fullInvoiceData);
             } catch (error) {
                 console.error(`Error generating full invoice for order ${orderId}:`, error);
@@ -184,48 +170,42 @@ async function generateTakerInvoice(orderId, takerDetails, customer_id) {
         }
 
         // Update the order status and taker_customer_id
-        const updateOrderText = `
-            UPDATE orders
-            SET status = 'depositing', taker_customer_id = $1
-            WHERE order_id = $2
-            RETURNING *;
-        `;
-        const updatedOrderResult = await client.query(updateOrderText, [customer_id, orderId]);
+        const updatedOrder = await prisma.order.update({
+            where: { order_id: orderId },
+            data: {
+                status: 'depositing',
+                taker_customer_id: customer_id
+            }
+        });
 
-        await client.query('COMMIT');
         return { 
-            order: updatedOrderResult.rows[0],
-            holdInvoice: holdInvoiceResult.rows[0], 
+            order: updatedOrder,
+            holdInvoice, 
             fullInvoice: fullInvoiceData 
         };
     } catch (error) {
-        await client.query('ROLLBACK');
         console.error('Error in generateTakerInvoice:', error);
         throw error;
-    } finally {
-        client.release();
     }
 }
 
-
-// Monitoring and updating the status
-async function checkAndUpdateOrderStatus(orderId, payment_hash) {
+async function checkAndUpdateOrderStatus(orderId: number, payment_hash: string) {
     try {
-      const checkInvoiceStatus = await queryInvoiceStatus(payment_hash);
-      if (checkInvoiceStatus === 'paid') {
-        const updatedOrder = await prisma.orders.update({
-          where: { order_id: parseInt(orderId) },
-          data: { status: 'bonds_locked' },
-        });
-        return updatedOrder;
-      }
+        const checkInvoiceStatus = await queryInvoiceStatus(payment_hash);
+        if (checkInvoiceStatus === 'paid') {
+            const updatedOrder = await prisma.order.update({
+                where: { order_id: orderId },
+                data: { status: 'bonds_locked' },
+            });
+            return updatedOrder;
+        }
     } catch (error) {
-      console.error('Error in checkAndUpdateOrderStatus:', error);
-      throw error;
+        console.error('Error in checkAndUpdateOrderStatus:', error);
+        throw error;
     }
-  }
+}
 
-async function handleFiatReceivedAndUpdateOrder(orderId: any) {
+async function handleFiatReceivedAndUpdateOrder(orderId: number) {
     try {
         await handleFiatReceived(orderId);
         console.log("Order status updated to indicate fiat received.");
@@ -235,23 +215,21 @@ async function handleFiatReceivedAndUpdateOrder(orderId: any) {
     }
 }
 
-async function updatePayoutStatus(orderId: any, status: any) {
-    const db = await import('../config/db.js'); // Import the database module dynamically
-
+async function updatePayoutStatus(orderId: number, status: string) {
     try {
-        // Update the status of the payout in the payouts table
-        const result = await db.query('UPDATE payouts SET status = $1 WHERE order_id = $2 RETURNING *', [status, orderId]);
+        const updatedPayout = await prisma.payout.updateMany({
+            where: { order_id: orderId },
+            data: { status }
+        });
 
-        // Check if the payout was updated successfully
-        if (result.rows.length === 0) {
+        if (updatedPayout.count === 0) {
             throw new Error('Failed to update payout status');
         }
 
-        return result.rows[0];
+        return updatedPayout;
     } catch (error) {
         throw error;
     }
 }
 
-
-export { addOrderAndGenerateInvoice, processTakeOrder, generateTakerInvoice, checkAndUpdateOrderStatus, handleFiatReceivedAndUpdateOrder , updatePayoutStatus};
+export { addOrderAndGenerateInvoice, processTakeOrder, generateTakerInvoice, checkAndUpdateOrderStatus, handleFiatReceivedAndUpdateOrder, updatePayoutStatus };
