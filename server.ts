@@ -40,10 +40,10 @@ app.use(cors({
 
 
 app.post('/api/register', async (req, res) => {
-  const { username, password } = req.body;
+  const { username } = req.body;
 
   try {
-    const user = await registerUser(username, password);
+    const user = await registerUser(username);
     res.status(201).json({
       message: 'Registration initiated, please pay the invoice to complete registration.',
       user: {
@@ -73,8 +73,8 @@ setInterval(async () => {
 // User Login
 app.post('/api/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
-    const user = await authenticateUser(username, password);
+    const { username } = req.body;
+    const user = await authenticateUser(username);
     const token = generateToken(user);
     res.json({ token });
   } catch (error) {

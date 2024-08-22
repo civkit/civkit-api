@@ -1,13 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import * as fs from "fs";
 import { generateInvoice, checkInvoicePayment } from './invoiceService.js';
 
 const prisma = new PrismaClient();
 
-export const registerUser = async (username: string, password: string) => {
-  // Hash the password
-  const hashedPassword = await bcrypt.hash(password, 10);
-
+export const registerUser = async (username: string) => {
   // Generate an invoice
   const amount_msat = 10; // Example: 1 satoshi as 1000 millisatoshis
   const description = "Registration Fee";
@@ -28,7 +26,6 @@ export const registerUser = async (username: string, password: string) => {
     const user = await prisma.user.create({
       data: {
         username,
-        password: hashedPassword,
         invoice,
         payment_hash,
         status: 'pending'
@@ -62,16 +59,13 @@ export const finalizeRegistration = async (username: any) => {
 
 // Authenticate User
 
-export const authenticateUser = async (username: string, password: string) => {
+export const authenticateUser = async (username: string) => {
   try {
     const user = await prisma.user.findUnique({
       where: { username: username },
     });
 
     if (!user) throw new Error('User not found');
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) throw new Error('Invalid credentials');
 
     return user;
   } catch (error) {
