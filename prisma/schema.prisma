@@ -14,6 +14,7 @@ model User {
   invoice       String?
   status        String?
   payment_hash  String?
+  nostr_event   Json?
   @@map("users")
 }
 
