@@ -10,11 +10,11 @@ datasource db {
 model User {
   id            Int       @id @default(autoincrement())
   username      String    @unique
+  password      String
   created_at    DateTime? @default(now())
   invoice       String?
   status        String?
   payment_hash  String?
-  nostr_event   Json?
   @@map("users")
 }
 
