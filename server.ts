@@ -21,12 +21,15 @@ import { query, pool } from './config/db.js';
 import dotenv from 'dotenv'
 import submitToMainstayRoutes from './routes/submitToMainstay.js';
 import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import crypto from 'crypto';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const prisma = new PrismaClient();
+
 
 app.use(express.json());
 
@@ -38,21 +41,21 @@ app.use(cors({
 
 
 
-
 app.post('/api/register', async (req, res) => {
-  const { username } = req.body;
+  const { username, password } = req.body;
 
   try {
-    const user = await registerUser(username);
+    const user = await registerUser(username, password);
     res.status(201).json({
       message: 'Registration initiated, please pay the invoice to complete registration.',
       user: {
         id: user.id,
         username: user.username,
+        password: user.password,
         created_at: user.created_at,
-        invoice: user.invoice
+        invoice: user.invoice,
       },
-      invoice: user.invoice  // Display the invoice to regidster
+      invoice: user.invoice  // Display the invoice to register
     });
   } catch (error) {
     // @ts-expect-error TS(2571): Object is of type 'unknown'.
@@ -73,8 +76,9 @@ setInterval(async () => {
 // User Login
 app.post('/api/login', async (req, res) => {
   try {
-    const { username } = req.body;
-    const user = await authenticateUser(username);
+    const { username, password } = req.body;
+
+    const user = await authenticateUser(username, password);
     const token = generateToken(user);
     res.json({ token });
   } catch (error) {
