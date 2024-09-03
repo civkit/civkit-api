@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@nostr-dev-kit/ndk':
-        specifier: ^2.8.1
+        specifier: ^2.8.2
         version: 2.8.2(typescript@5.5.3)
       axios:
         specifier: ^1.7.2
