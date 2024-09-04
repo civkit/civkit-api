@@ -409,6 +409,7 @@ app.post('/api/get-invoice', async (req, res) => {
 app.use('/api', submitToMainstayRoutes);
 
 console.log('Registering /api/taker-invoice/:orderId route');
+
 app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
   console.log('Received request for taker invoice:', req.params.orderId);
   const orderId = parseInt(req.params.orderId);
@@ -424,34 +425,63 @@ app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Generate hold invoice using Lightning node
-    const holdInvoiceLabel = generateInvoiceLabel('hold', 'taker', orderId);
-    const holdInvoiceAmount = BigInt(order.amount_msat || 0);
-    const holdInvoiceDescription = `Hold invoice for order ${orderId} (Taker)`;
+    const holdInvoice = await getOrCreateInvoice(orderId, 'hold', 'taker', order.amount_msat);
+    const fullInvoice = await getOrCreateInvoice(orderId, 'full', 'taker', order.amount_msat);
 
-    const holdInvoice = await postHoldinvoice(
-      holdInvoiceAmount,
-      holdInvoiceLabel,
-      holdInvoiceDescription
-    );
-
-    // Save hold invoice to database
-    const savedHoldInvoice = await prisma.invoice.create({
-      data: {
-        order_id: orderId,
-        bolt11: holdInvoice.bolt11,
-        amount_msat: holdInvoiceAmount,
-        description: holdInvoiceDescription,
-        status: 'pending',
-        expires_at: new Date(Date.now() + 3600000), // 1 hour expiry
-        payment_hash: holdInvoice.payment_hash,
-        invoice_type: 'hold',
-        user_type: 'taker',
-      },
+    res.status(200).json({
+      holdInvoice,
+      fullInvoice,
     });
+  } catch (error) {
+    console.error('Error creating/fetching taker invoices:', error);
+    res.status(500).json({ error: 'Failed to create/fetch taker invoices', details: error.message });
+  }
+});
 
-    // Generate full invoice using Lightning node
-    const fullInvoiceLabel = generateInvoiceLabel('full', 'taker', orderId);
+async function getOrCreateInvoice(orderId, invoiceType, userType, amount_msat) {
+  // Check for existing invoice
+  const existingInvoice = await prisma.invoice.findFirst({
+    where: {
+      order_id: orderId,
+      invoice_type: invoiceType,
+      user_type: userType,
+    },
+  });
+
+  if (existingInvoice) {
+    console.log(`Existing ${invoiceType} invoice found for order ${orderId}`);
+    return existingInvoice;
+  }
+
+  // If no existing invoice, create a new one
+  console.log(`Creating new ${invoiceType} invoice for order ${orderId}`);
+  
+  const label = generateInvoiceLabel(invoiceType, userType, orderId);
+  const description = `${invoiceType} invoice for order ${orderId} (${userType})`;
+
+  const holdInvoice = await postHoldinvoice(
+    amount_msat,
+    label,
+    description
+  );
+
+  const newInvoice = await prisma.invoice.create({
+    data: {
+      order_id: orderId,
+      bolt11: holdInvoice.bolt11,
+      amount_msat: BigInt(amount_msat),
+      description: description,
+      status: 'pending',
+      created_at: new Date(),
+      expires_at: new Date(holdInvoice.expires_at * 1000), // Convert to milliseconds
+      payment_hash: holdInvoice.payment_hash,
+      invoice_type: invoiceType,
+      user_type: userType,
+    },
+  });
+
+  return newInvoice;
+}
     const fullInvoiceAmount = BigInt(order.amount_msat || 0);
     const fullInvoiceDescription = `Full invoice for order ${orderId} (Taker)`;
 
