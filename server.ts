@@ -22,6 +22,7 @@ import dotenv from 'dotenv'
 import submitToMainstayRoutes from './routes/submitToMainstay.js';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
+import { generateInvoiceLabel } from './utils/invoiceUtils.js';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use(cors({
   origin: 'http://localhost:3001',
   methods: 'GET,POST,PUT,DELETE',
   allowedHeaders: 'Content-Type,Authorization',
+  credentials: true,
 }));
 
 
@@ -405,4 +407,94 @@ app.post('/api/get-invoice', async (req, res) => {
 });
 
 app.use('/api', submitToMainstayRoutes);
+
+console.log('Registering /api/taker-invoice/:orderId route');
+app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
+  console.log('Received request for taker invoice:', req.params.orderId);
+  const orderId = parseInt(req.params.orderId);
+  const takerId = req.user.id; // Assuming the user ID is available in the JWT token
+
+  try {
+    // Fetch the order from the database
+    const order = await prisma.order.findUnique({
+      where: { order_id: orderId },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Generate hold invoice using Lightning node
+    const holdInvoiceLabel = generateInvoiceLabel('hold', 'taker', orderId);
+    const holdInvoiceAmount = BigInt(order.amount_msat || 0);
+    const holdInvoiceDescription = `Hold invoice for order ${orderId} (Taker)`;
+
+    const holdInvoice = await postHoldinvoice(
+      holdInvoiceAmount,
+      holdInvoiceLabel,
+      holdInvoiceDescription
+    );
+
+    // Save hold invoice to database
+    const savedHoldInvoice = await prisma.invoice.create({
+      data: {
+        order_id: orderId,
+        bolt11: holdInvoice.bolt11,
+        amount_msat: holdInvoiceAmount,
+        description: holdInvoiceDescription,
+        status: 'pending',
+        expires_at: new Date(Date.now() + 3600000), // 1 hour expiry
+        payment_hash: holdInvoice.payment_hash,
+        invoice_type: 'hold',
+        user_type: 'taker',
+      },
+    });
+
+    // Generate full invoice using Lightning node
+    const fullInvoiceLabel = generateInvoiceLabel('full', 'taker', orderId);
+    const fullInvoiceAmount = BigInt(order.amount_msat || 0);
+    const fullInvoiceDescription = `Full invoice for order ${orderId} (Taker)`;
+
+    const fullInvoice = await postHoldinvoice(
+      fullInvoiceAmount,
+      fullInvoiceLabel,
+      fullInvoiceDescription
+    );
+
+    // Save full invoice to database
+    const savedFullInvoice = await prisma.invoice.create({
+      data: {
+        order_id: orderId,
+        bolt11: fullInvoice.bolt11,
+        amount_msat: fullInvoiceAmount,
+        description: fullInvoiceDescription,
+        status: 'pending',
+        expires_at: new Date(Date.now() + 3600000), // 1 hour expiry
+        payment_hash: fullInvoice.payment_hash,
+        invoice_type: 'full',
+        user_type: 'taker',
+      },
+    });
+
+    // Update the order with the taker's ID
+    const updatedOrder = await prisma.order.update({
+      where: { order_id: orderId },
+      data: { taker_customer_id: takerId },
+    });
+
+    res.status(200).json({
+      message: 'Taker invoices created successfully',
+      order: updatedOrder,
+      holdInvoice: savedHoldInvoice,
+      fullInvoice: savedFullInvoice,
+    });
+  } catch (error) {
+    console.error('Error creating taker invoice:', error);
+    res.status(500).json({ error: 'Failed to create taker invoice', details: error.message });
+  }
+});
+
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'Server is working' });
+});
 
