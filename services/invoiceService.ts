@@ -17,49 +17,89 @@ const agent = new https.Agent({
 const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
 const RUNE = process.env.RUNE;
 
-async function postHoldinvoice(amount_msat, description) {
-  const timestamp = Date.now(); // Generate a unique timestamp
-  const label = `invoice_${timestamp}`; // Create a unique label using the timestamp
+async function postHoldinvoice(amount_msat, description, orderId?, userType?) {
+  const timestamp = Date.now();
+  const label = orderId && userType ? `invoice_${orderId}_${userType}_${timestamp}` : `invoice_${timestamp}`;
 
-  console.log('Posting hold invoice with:', { amount_msat, label, description });
-  console.log('Using RUNE:', RUNE); // Log the rune to ensure it is correctly set
+  console.log('Posting hold invoice with:', { amount_msat, label, description, orderId, userType });
+  console.log('Using RUNE:', RUNE);
 
   try {
-      if (!LIGHTNING_NODE_API_URL || !RUNE) {
-          throw new Error('LIGHTNING_NODE_API_URL or RUNE is not defined');
-      }
+    if (!LIGHTNING_NODE_API_URL || !RUNE) {
+      throw new Error('LIGHTNING_NODE_API_URL or RUNE is not defined');
+    }
 
-      const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
-        amount_msat,
-        label,
-        description
-      }, {
-        headers: { 
-          'Content-Type': 'application/json',
-          'Rune': RUNE
-        },
-        httpsAgent: agent  // Ensure the agent is included here
+    // Check for existing taker invoice only if orderId and userType are provided
+    if (orderId && userType === 'taker') {
+      const existingInvoice = await prisma.invoice.findFirst({
+        where: {
+          order_id: orderId,
+          user_type: 'taker',
+          invoice_type: 'hold',
+          status: { in: ['pending', 'unpaid'] }
+        }
       });
-      
-      console.log('Hold invoice response:', response.data);
-      
-      if (!response.data || !response.data.bolt11 || !response.data.payment_hash) {
-          throw new Error('Invalid response from Lightning Node API: ' + JSON.stringify(response.data));
+
+      if (existingInvoice) {
+        console.log(`Existing hold invoice found for order ${orderId} and taker`);
+        return {
+          bolt11: existingInvoice.bolt11,
+          payment_hash: existingInvoice.payment_hash,
+          status: existingInvoice.status,
+          invoice_type: 'takerHold'
+        };
       }
-      
-      // Return the invoice data with invoice_type set to 'makerHold'
-      return {
-          bolt11: response.data.bolt11,
-          payment_hash: response.data.payment_hash,
-          status: 'unpaid',
-          invoice_type: 'makerHold'  // Ensure this field is included
-      };
+    }
+
+    const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
+      amount_msat,
+      label,
+      description
+    }, {
+      headers: { 
+        'Content-Type': 'application/json',
+        'Rune': RUNE
+      },
+      httpsAgent: agent
+    });
+    
+    console.log('Hold invoice response:', response.data);
+    
+    if (!response.data || !response.data.bolt11 || !response.data.payment_hash) {
+      throw new Error('Invalid response from Lightning Node API: ' + JSON.stringify(response.data));
+    }
+    
+    const invoiceData = {
+      bolt11: response.data.bolt11,
+      payment_hash: response.data.payment_hash,
+      status: 'unpaid',
+      invoice_type: orderId && userType === 'taker' ? 'takerHold' : 'makerHold'
+    };
+
+    // Save the invoice to the database only if it's a taker invoice
+    if (orderId && userType === 'taker') {
+      await prisma.invoice.create({
+        data: {
+          order_id: orderId,
+          bolt11: invoiceData.bolt11,
+          amount_msat: BigInt(amount_msat),
+          description: description,
+          status: invoiceData.status,
+          created_at: new Date(),
+          expires_at: new Date(response.data.expires_at * 1000),
+          payment_hash: invoiceData.payment_hash,
+          invoice_type: 'hold',
+          user_type: 'taker',
+        },
+      });
+    }
+
+    return invoiceData;
   } catch (error) {
-      console.error('Error posting hold invoice:', error.response ? error.response.data : error.message);
-      throw error;
+    console.error('Error posting hold invoice:', error.response ? error.response.data : error.message);
+    throw error;
   }
 }
-// Remaining functions remain unchanged
 
 async function holdInvoiceLookup(payment_hash) {
   try {
@@ -97,6 +137,7 @@ async function holdInvoiceLookup(payment_hash) {
     throw error;
   }
 }
+
 async function updateInvoiceStatus(payment_hash, status) {
   try {
     const updatedInvoice = await prisma.invoice.updateMany({
@@ -111,6 +152,7 @@ async function updateInvoiceStatus(payment_hash, status) {
     throw error;
   }
 }
+
 // Syncs the invoice status from lightning with the database
 async function syncInvoicesWithNode() {
   const agent = new https.Agent({ rejectUnauthorized: false });
@@ -319,6 +361,7 @@ async function postFullAmountInvoice(amount_msat, label, description, orderId, o
       throw error;
   }
 }
+
 async function handleFiatReceived(orderId) {
   try {
     await prisma.$transaction(async (prisma) => {

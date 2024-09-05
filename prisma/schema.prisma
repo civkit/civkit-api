@@ -45,6 +45,8 @@ model Invoice {
   user_type    String?
 
   @@map("invoices")
+  @@unique([order_id, user_type, invoice_type, status], name: "unique_active_invoice")
+
 }
 
 model Order {
