@@ -20,17 +20,31 @@ import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatSer
 import { query, pool } from './config/db.js';
 import dotenv from 'dotenv'
 import submitToMainstayRoutes from './routes/submitToMainstay.js';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import crypto from 'crypto';
 import { generateInvoiceLabel } from './utils/invoiceUtils.js';
-
+import axios from 'axios';
+import https from 'node:https';
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const prisma = new PrismaClient();
+const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
+const RUNE = process.env.RUNE;
 
+console.log('LIGHTNING_NODE_API_URL:', LIGHTNING_NODE_API_URL);
+console.log('RUNE:', RUNE);
+
+if (!LIGHTNING_NODE_API_URL || !RUNE) {
+  console.error('Missing required environment variables. Please check your .env file.');
+  process.exit(1);
+}
+
+const agent = new https.Agent({
+  rejectUnauthorized: false
+});
 
 app.use(express.json());
 
@@ -40,8 +54,6 @@ app.use(cors({
   allowedHeaders: 'Content-Type,Authorization',
   credentials: true,
 }));
-
-
 
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
@@ -429,29 +441,28 @@ app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const holdInvoice = await createTakerHoldInvoice(orderId, order.amount_msat, `Order ${orderId} for Taker`);
+    const holdInvoice = await createTakerHoldInvoice(orderId, order.amount_msat, `Taker hold invoice for Order ${orderId}`);
 
     const updatedOrder = await prisma.order.update({
       where: { order_id: orderId },
-      data: { taker_customer_id: takerId },
+      data: { 
+        taker_customer_id: takerId,
+        status: 'taker_found'
+      },
     });
 
-    res.status(200).json({
-      message: 'Taker hold invoice created/fetched successfully',
+    res.status(200).json(serializeBigInt({
+      message: 'Taker hold invoice created successfully',
       order: updatedOrder,
       holdInvoice,
-    });
+    }));
   } catch (error) {
-    if (error.message.includes('Taker invoice for order id')) {
-      console.log(`[API] ${error.message}`);
-      return res.status(409).json({ error: error.message });
-    }
-    console.error('[API] Error creating/fetching taker hold invoice:', error);
-    res.status(500).json({ error: 'Failed to create/fetch taker hold invoice', details: error.message });
+    console.error('[API] Error creating taker hold invoice:', error);
+    res.status(500).json({ error: 'Failed to create taker hold invoice', details: error.message });
   }
 });
 
-async function createTakerHoldInvoice(orderId: number, amount_msat: number, description: string) {
+export async function createTakerHoldInvoice(orderId: number, amount_msat: number, description: string) {
   console.log(`[createTakerHoldInvoice] Starting for orderId: ${orderId}`);
 
   return await prisma.$transaction(async (prisma) => {
@@ -475,32 +486,13 @@ async function createTakerHoldInvoice(orderId: number, amount_msat: number, desc
     const timestamp = Date.now();
     const label = `taker_hold_${orderId}_${timestamp}`;
 
-    // Create a placeholder invoice in the database
-    const placeholderInvoice = await prisma.invoice.create({
-      data: {
-        order_id: orderId,
-        bolt11: 'placeholder',
-        amount_msat: BigInt(amount_msat),
-        description: description,
-        status: 'pending',
-        created_at: new Date(),
-        expires_at: new Date(Date.now() + 3600000), // 1 hour from now, will be updated
-        payment_hash: 'placeholder',
-        invoice_type: 'hold',
-        user_type: 'taker',
-      },
-    });
-
-    console.log(`[createTakerHoldInvoice] Placeholder invoice created in database:`, {
-      invoice_id: placeholderInvoice.invoice_id,
-    });
-
-    // Now create the invoice on the Lightning node
+    // Now create the hold invoice on the Lightning node
     try {
-      const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
+      const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
         amount_msat,
         label,
-        description
+        description,
+        cltv: 144, // You may need to adjust this value
       }, {
         headers: { 
           'Content-Type': 'application/json',
@@ -515,30 +507,48 @@ async function createTakerHoldInvoice(orderId: number, amount_msat: number, desc
         throw new Error('Invalid response from Lightning Node API: ' + JSON.stringify(response.data));
       }
 
-      // Update the placeholder invoice with the real data
-      const updatedInvoice = await prisma.invoice.update({
-        where: { invoice_id: placeholderInvoice.invoice_id },
+      // Create the invoice in the database with the real data
+      const newInvoice = await prisma.invoice.create({
         data: {
+          order_id: orderId,
           bolt11: response.data.bolt11,
-          payment_hash: response.data.payment_hash,
+          amount_msat: BigInt(amount_msat),
+          description: description,
+          status: 'unpaid',
+          created_at: new Date(),
           expires_at: new Date(response.data.expires_at * 1000),
+          payment_hash: response.data.payment_hash,
+          invoice_type: 'hold',
+          user_type: 'taker',
         },
       });
 
-      console.log(`[createTakerHoldInvoice] Invoice updated with Lightning node data:`, {
-        invoice_id: updatedInvoice.invoice_id,
-        payment_hash: updatedInvoice.payment_hash,
+      console.log(`[createTakerHoldInvoice] Invoice created in database:`, {
+        invoice_id: newInvoice.invoice_id,
+        payment_hash: newInvoice.payment_hash,
       });
 
-      return updatedInvoice;
+      return newInvoice;
     } catch (error) {
       console.error(`[createTakerHoldInvoice] Error creating taker hold invoice:`, error);
-      // If an error occurs, the transaction will be rolled back automatically
       throw error;
     }
   }, {
-    isolationLevel: Prisma.TransactionIsolationLevel.Serializable // Highest isolation level
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable
   });
+}
+
+function serializeBigInt(data: any): any {
+  if (typeof data === 'bigint') {
+    return data.toString();
+  } else if (Array.isArray(data)) {
+    return data.map(serializeBigInt);
+  } else if (typeof data === 'object' && data !== null) {
+    return Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [key, serializeBigInt(value)])
+    );
+  }
+  return data;
 }
 
 app.get('/api/test', (req, res) => {
