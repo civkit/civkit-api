@@ -16,7 +16,7 @@ const agent = new https.Agent({
 const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
 const RUNE = process.env.RUNE;
 
-async function postHoldinvoice(amount_msat: number, description: string, orderId: number | string, userType?: string) {
+async function postHoldinvoice(amount_msat: number, description: string, orderId: number | string, userType: string) {
   const orderIdNumber = typeof orderId === 'string' ? parseInt(orderId, 10) : orderId;
   
   if (isNaN(orderIdNumber)) {
@@ -41,12 +41,13 @@ async function postHoldinvoice(amount_msat: number, description: string, orderId
       where: {
         order_id: orderIdNumber,
         invoice_type: 'hold',
+        user_type: userType,
         status: { in: ['pending', 'unpaid'] }
       }
     });
 
     if (existingInvoice) {
-      console.log(`Existing hold invoice found for order ${orderIdNumber}`);
+      console.log(`Existing hold invoice found for order ${orderIdNumber} and user type ${userType}`);
       return {
         bolt11: existingInvoice.bolt11,
         payment_hash: existingInvoice.payment_hash,
@@ -92,7 +93,7 @@ async function postHoldinvoice(amount_msat: number, description: string, orderId
         expires_at: new Date(response.data.expires_at * 1000),
         payment_hash: invoiceData.payment_hash,
         invoice_type: 'hold',
-        user_type: userType || null,
+        user_type: userType,
       },
     });
 
@@ -104,6 +105,7 @@ async function postHoldinvoice(amount_msat: number, description: string, orderId
     throw error;
   }
 }
+
 
 async function holdInvoiceLookup(payment_hash: string) {
   try {
@@ -767,14 +769,22 @@ async function checkInvoicePayment(payment_hash: string) {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status}`);
+      // Only log critical errors
+      if (response.status !== 404) {
+        console.error(`Critical error checking invoice payment: HTTP ${response.status}`);
+      }
+      return false; // Assume unpaid for any error
     }
 
     const invoiceData = await response.json();
+    if (invoiceData.status === 'paid') {
+      console.log(`Invoice ${payment_hash} is paid.`);
+    }
     return invoiceData.status === 'paid';
   } catch (error) {
-    console.error('Error checking invoice payment:', error);
-    throw error;
+    // Only log unexpected errors
+    console.error('Unexpected error in checkInvoicePayment:', error.message);
+    return false; // Assume unpaid for any error
   }
 }
 

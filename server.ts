@@ -263,7 +263,7 @@ app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
 app.get('/api/invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
-    const invoice = await prisma.invoice.findFirst({
+    const invoice = await prisma.invoice.findMany({
       where: {
         order_id: parseInt(orderId)
       }

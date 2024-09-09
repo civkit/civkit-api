@@ -39,11 +39,12 @@ function postHoldinvoice(amount_msat, description, orderId, userType) {
                 where: {
                     order_id: orderIdNumber,
                     invoice_type: 'hold',
+                    user_type: userType,
                     status: { in: ['pending', 'unpaid'] }
                 }
             });
             if (existingInvoice) {
-                console.log(`Existing hold invoice found for order ${orderIdNumber}`);
+                console.log(`Existing hold invoice found for order ${orderIdNumber} and user type ${userType}`);
                 return {
                     bolt11: existingInvoice.bolt11,
                     payment_hash: existingInvoice.payment_hash,
@@ -84,7 +85,7 @@ function postHoldinvoice(amount_msat, description, orderId, userType) {
                     expires_at: new Date(response.data.expires_at * 1000),
                     payment_hash: invoiceData.payment_hash,
                     invoice_type: 'hold',
-                    user_type: userType || null,
+                    user_type: userType,
                 },
             });
             console.log('Hold invoice saved to database:', savedInvoice);
@@ -723,14 +724,22 @@ function checkInvoicePayment(payment_hash) {
                 agent: new https.Agent({ rejectUnauthorized: false })
             });
             if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
+                // Only log critical errors
+                if (response.status !== 404) {
+                    console.error(`Critical error checking invoice payment: HTTP ${response.status}`);
+                }
+                return false; // Assume unpaid for any error
             }
             const invoiceData = yield response.json();
+            if (invoiceData.status === 'paid') {
+                console.log(`Invoice ${payment_hash} is paid.`);
+            }
             return invoiceData.status === 'paid';
         }
         catch (error) {
-            console.error('Error checking invoice payment:', error);
-            throw error;
+            // Only log unexpected errors
+            console.error('Unexpected error in checkInvoicePayment:', error.message);
+            return false; // Assume unpaid for any error
         }
     });
 }
