@@ -11,7 +11,7 @@ import express from 'express';
 import cors from 'cors';
 import { authenticateJWT } from './middleware/authMiddleware.js';
 import { generateToken } from './utils/auth.js';
-import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode, handleFiatReceived, settleHoldInvoicesByOrderIdService, } from './services/invoiceService.js';
+import { postHoldinvoice, holdInvoiceLookup, syncInvoicesWithNode, syncPayoutsWithNode, handleFiatReceived, settleHoldInvoicesByOrderIdService, fullInvoiceLookup } from './services/invoiceService.js';
 import { registerUser, authenticateUser, pollAndCompleteRegistration } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
 import payoutsRoutes from './routes/payoutRoutes.js';
@@ -236,17 +236,17 @@ app.get('/api/orders/:orderId', authenticateJWT, (req, res) => __awaiter(void 0,
 app.get('/api/invoice/:orderId', authenticateJWT, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { orderId } = req.params;
     try {
-        const invoice = yield prisma.invoice.findMany({
+        const invoices = yield prisma.invoice.findMany({
             where: {
                 order_id: parseInt(orderId)
             }
         });
-        if (!invoice) {
+        if (!invoices || invoices.length === 0) {
             return res.status(404).json({ error: 'Invoice not found' });
         }
         // Convert BigInt fields to strings
-        const serializedInvoice = JSON.parse(JSON.stringify(invoice, (key, value) => typeof value === 'bigint' ? value.toString() : value));
-        res.status(200).json(serializedInvoice);
+        const serializedInvoices = invoices.map(invoice => (Object.assign(Object.assign({}, invoice), { amount_msat: invoice.amount_msat.toString(), amount_received_msat: invoice.amount_received_msat ? invoice.amount_received_msat.toString() : null, created_at: invoice.created_at.toISOString(), expires_at: invoice.expires_at.toISOString(), paid_at: invoice.paid_at ? invoice.paid_at.toISOString() : null })));
+        res.status(200).json(serializedInvoices);
     }
     catch (err) {
         console.error('Error fetching invoice:', err);
@@ -275,7 +275,9 @@ app.get('/api/taker-invoice/:orderId', authenticateJWT, (req, res) => __awaiter(
     }
 }));
 app.get('/api/full-invoice/:orderId', authenticateJWT, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
     const { orderId } = req.params;
+    console.log(`Fetching full invoice for orderId: ${orderId}`);
     try {
         const invoice = yield prisma.invoice.findFirst({
             where: {
@@ -283,17 +285,28 @@ app.get('/api/full-invoice/:orderId', authenticateJWT, (req, res) => __awaiter(v
                 invoice_type: 'full'
             }
         });
+        console.log('Found invoice:', invoice);
         if (!invoice) {
+            console.log('No full invoice found for this order');
             return res.status(404).json({ error: 'Full invoice not found for this order' });
         }
-        // Check the invoice status and update if paid
+        console.log('Looking up invoice status for payment_hash:', invoice.payment_hash);
         const invoiceStatus = yield fullInvoiceLookup(invoice.payment_hash);
-        // Refresh the invoice data in case it was updated
+        console.log('Invoice status from Lightning node:', invoiceStatus);
+        // Update the invoice status if it's paid
+        if (invoiceStatus.status === 'paid' && invoice.status !== 'paid') {
+            yield prisma.invoice.update({
+                where: { invoice_id: invoice.invoice_id },
+                data: { status: 'paid' }
+            });
+            console.log(`Updated invoice ${invoice.invoice_id} status to paid`);
+        }
+        // Refresh the invoice data
         const updatedInvoice = yield prisma.invoice.findUnique({
             where: { invoice_id: invoice.invoice_id }
         });
         // Convert BigInt to String for JSON serialization
-        const serializedInvoice = Object.assign(Object.assign({}, updatedInvoice), { amount_msat: updatedInvoice.amount_msat.toString(), amount_received_msat: updatedInvoice.amount_received_msat ? updatedInvoice.amount_received_msat.toString() : null, created_at: updatedInvoice.created_at.toISOString(), expires_at: updatedInvoice.expires_at.toISOString(), paid_at: updatedInvoice.paid_at ? updatedInvoice.paid_at.toISOString() : null });
+        const serializedInvoice = Object.assign(Object.assign({}, updatedInvoice), { amount_msat: updatedInvoice.amount_msat.toString(), amount_received_msat: updatedInvoice.amount_received_msat ? updatedInvoice.amount_received_msat.toString() : null, created_at: (_a = updatedInvoice.created_at) === null || _a === void 0 ? void 0 : _a.toISOString(), expires_at: (_b = updatedInvoice.expires_at) === null || _b === void 0 ? void 0 : _b.toISOString() });
         res.status(200).json({ invoice: serializedInvoice, lightningStatus: invoiceStatus });
     }
     catch (err) {
@@ -301,20 +314,6 @@ app.get('/api/full-invoice/:orderId', authenticateJWT, (req, res) => __awaiter(v
         res.status(500).json({ error: 'An error occurred while fetching the full invoice' });
     }
 }));
-// // endpoint to lookup full invoice by payment hash
-// app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
-//   const { payment_hash } = req.body;
-//   try {
-//     const result = await query('SELECT * FROM invoices WHERE payment_hash = $1 AND invoice_type = $2', [payment_hash, 'full']);
-//     if (result.rows.length === 0) {
-//       return res.status(404).json({ error: 'Full invoice not found' });
-//     }
-//     res.status(200).json(result.rows[0]);
-//   } catch (err) {
-//     // @ts-expect-error TS(2571): Object is of type 'unknown'.
-//     res.status(500).json({ error: err.message });
-//   }
-// });
 // Call this function periodically
 setInterval(() => __awaiter(void 0, void 0, void 0, function* () {
     try {

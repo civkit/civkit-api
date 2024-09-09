@@ -757,9 +757,42 @@ async function generateInvoice(amount_msat: number, description: string, label: 
   }
 }
 
+async function fullInvoiceLookup(paymentHash) {
+  try {
+    console.log(`Performing full invoice lookup for payment_hash: ${paymentHash}`);
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Rune': RUNE,
+      },
+      agent
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    const { invoices } = await response.json();
+    console.log('Lightning node response:', invoices);
+    
+    // Find the specific invoice we're looking for
+    const invoice = invoices.find(inv => inv.payment_hash === paymentHash);
+    
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+    
+    return invoice;
+  } catch (error) {
+    console.error('Error looking up full invoice:', error);
+    throw error;
+  }
+}
+
 async function checkInvoicePayment(payment_hash: string) {
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice/${payment_hash}`, {
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -788,6 +821,9 @@ async function checkInvoicePayment(payment_hash: string) {
   }
 }
 
+
+
+
 export {
   postHoldinvoice,
   holdInvoiceLookup,
@@ -808,5 +844,6 @@ export {
   updateOrderStatus,  
   getHoldInvoicesByOrderId,
   generateInvoice,
-  checkInvoicePayment
+  checkInvoicePayment,
+  fullInvoiceLookup
 };

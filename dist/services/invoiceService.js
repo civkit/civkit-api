@@ -712,10 +712,40 @@ function generateInvoice(amount_msat, description, label) {
         }
     });
 }
+function fullInvoiceLookup(paymentHash) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            console.log(`Performing full invoice lookup for payment_hash: ${paymentHash}`);
+            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Rune': RUNE,
+                },
+                agent
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP Error: ${response.status}`);
+            }
+            const { invoices } = yield response.json();
+            console.log('Lightning node response:', invoices);
+            // Find the specific invoice we're looking for
+            const invoice = invoices.find(inv => inv.payment_hash === paymentHash);
+            if (!invoice) {
+                throw new Error('Invoice not found');
+            }
+            return invoice;
+        }
+        catch (error) {
+            console.error('Error looking up full invoice:', error);
+            throw error;
+        }
+    });
+}
 function checkInvoicePayment(payment_hash) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice/${payment_hash}`, {
+            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json',
@@ -743,4 +773,4 @@ function checkInvoicePayment(payment_hash) {
         }
     });
 }
-export { postHoldinvoice, holdInvoiceLookup, generateBolt11Invoice, syncInvoicesWithNode, syncPayoutsWithNode, postFullAmountInvoice, handleFiatReceived, settleHoldInvoice, checkAndProcessPendingPayouts, updatePayoutStatus, settleHoldInvoiceByHash, payInvoice, settleHoldInvoicesByOrderIdService, checkInvoicesAndCreateChatroom, createChatroom, settleHoldInvoices, updateOrderStatus, getHoldInvoicesByOrderId, generateInvoice, checkInvoicePayment };
+export { postHoldinvoice, holdInvoiceLookup, generateBolt11Invoice, syncInvoicesWithNode, syncPayoutsWithNode, postFullAmountInvoice, handleFiatReceived, settleHoldInvoice, checkAndProcessPendingPayouts, updatePayoutStatus, settleHoldInvoiceByHash, payInvoice, settleHoldInvoicesByOrderIdService, checkInvoicesAndCreateChatroom, createChatroom, settleHoldInvoices, updateOrderStatus, getHoldInvoicesByOrderId, generateInvoice, checkInvoicePayment, fullInvoiceLookup };
