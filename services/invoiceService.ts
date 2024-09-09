@@ -2,11 +2,10 @@ import { PrismaClient } from '@prisma/client';
 import fetch from 'node-fetch';
 import https from 'https';
 import { config } from 'dotenv';
-import { retrievePayoutInvoice } from './payoutService.js';
-import { createPayout } from './payoutService.js';
+import { retrievePayoutInvoice, createPayout } from './payoutService.js';
 import axios from 'axios';
 
-config(); // This line configures dotenv to load the environment variables
+config();
 
 const prisma = new PrismaClient();
 
@@ -17,11 +16,17 @@ const agent = new https.Agent({
 const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
 const RUNE = process.env.RUNE;
 
-async function postHoldinvoice(amount_msat, description, orderId?, userType?) {
-  const timestamp = Date.now();
-  const label = orderId && userType ? `invoice_${orderId}_${userType}_${timestamp}` : `invoice_${timestamp}`;
+async function postHoldinvoice(amount_msat: number, description: string, orderId: number | string, userType?: string) {
+  const orderIdNumber = typeof orderId === 'string' ? parseInt(orderId, 10) : orderId;
+  
+  if (isNaN(orderIdNumber)) {
+    throw new Error('Invalid orderId provided');
+  }
 
-  console.log('Posting hold invoice with:', { amount_msat, label, description, orderId, userType });
+  const timestamp = Date.now();
+  const label = `invoice_${orderIdNumber}_${timestamp}`;
+
+  console.log('Posting hold invoice with:', { amount_msat, label, description, orderId: orderIdNumber, userType });
   console.log('Using RUNE:', RUNE);
 
   try {
@@ -29,32 +34,32 @@ async function postHoldinvoice(amount_msat, description, orderId?, userType?) {
       throw new Error('LIGHTNING_NODE_API_URL or RUNE is not defined');
     }
 
-    // Check for existing taker invoice only if orderId and userType are provided
-    if (orderId && userType === 'taker') {
-      const existingInvoice = await prisma.invoice.findFirst({
-        where: {
-          order_id: orderId,
-          user_type: 'taker',
-          invoice_type: 'hold',
-          status: { in: ['pending', 'unpaid'] }
-        }
-      });
+    const holdAmount = Math.floor(amount_msat * 0.05);
+    console.log(`Adjusted hold amount: ${holdAmount} msat (5% of ${amount_msat} msat)`);
 
-      if (existingInvoice) {
-        console.log(`Existing hold invoice found for order ${orderId} and taker`);
-        return {
-          bolt11: existingInvoice.bolt11,
-          payment_hash: existingInvoice.payment_hash,
-          status: existingInvoice.status,
-          invoice_type: 'takerHold'
-        };
+    const existingInvoice = await prisma.invoice.findFirst({
+      where: {
+        order_id: orderIdNumber,
+        invoice_type: 'hold',
+        status: { in: ['pending', 'unpaid'] }
       }
+    });
+
+    if (existingInvoice) {
+      console.log(`Existing hold invoice found for order ${orderIdNumber}`);
+      return {
+        bolt11: existingInvoice.bolt11,
+        payment_hash: existingInvoice.payment_hash,
+        status: existingInvoice.status,
+        invoice_type: 'hold'
+      };
     }
 
-    const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
-      amount_msat,
+    const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
+      amount_msat: holdAmount,
       label,
-      description
+      description,
+      cltv: 144,
     }, {
       headers: { 
         'Content-Type': 'application/json',
@@ -73,26 +78,25 @@ async function postHoldinvoice(amount_msat, description, orderId?, userType?) {
       bolt11: response.data.bolt11,
       payment_hash: response.data.payment_hash,
       status: 'unpaid',
-      invoice_type: orderId && userType === 'taker' ? 'takerHold' : 'makerHold'
+      invoice_type: 'hold'
     };
 
-    // Save the invoice to the database only if it's a taker invoice
-    if (orderId && userType === 'taker') {
-      await prisma.invoice.create({
-        data: {
-          order_id: orderId,
-          bolt11: invoiceData.bolt11,
-          amount_msat: BigInt(amount_msat),
-          description: description,
-          status: invoiceData.status,
-          created_at: new Date(),
-          expires_at: new Date(response.data.expires_at * 1000),
-          payment_hash: invoiceData.payment_hash,
-          invoice_type: 'hold',
-          user_type: 'taker',
-        },
-      });
-    }
+    const savedInvoice = await prisma.invoice.create({
+      data: {
+        order_id: orderIdNumber,
+        bolt11: invoiceData.bolt11,
+        amount_msat: BigInt(holdAmount),
+        description: description,
+        status: invoiceData.status,
+        created_at: new Date(),
+        expires_at: new Date(response.data.expires_at * 1000),
+        payment_hash: invoiceData.payment_hash,
+        invoice_type: 'hold',
+        user_type: userType || null,
+      },
+    });
+
+    console.log('Hold invoice saved to database:', savedInvoice);
 
     return invoiceData;
   } catch (error) {
@@ -101,14 +105,14 @@ async function postHoldinvoice(amount_msat, description, orderId?, userType?) {
   }
 }
 
-async function holdInvoiceLookup(payment_hash) {
+async function holdInvoiceLookup(payment_hash: string) {
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
       method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Rune': RUNE,
-        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ payment_hash }),
       agent: new https.Agent({ rejectUnauthorized: false })
@@ -119,44 +123,39 @@ async function holdInvoiceLookup(payment_hash) {
     }
 
     const data = await response.json();
-    
-    if (data.invoices && data.invoices.length > 0) {
-      const invoice = data.invoices[0];
-      
-      // Check if the invoice status is 'paid' and update the database
-      if (invoice.status === 'paid') {
-        await updateInvoiceStatus(payment_hash, 'paid');
-      }
-      
-      return invoice;
-    } else {
-      throw new Error('Invoice not found');
+    console.log('Hold invoice lookup response:', data);
+
+    if (data.state === 'ACCEPTED') {
+      await updateInvoiceStatus(payment_hash, 'paid');
     }
+
+    return {
+      state: data.state,
+      htlc_expiry: data.htlc_expiry,
+      // Include other relevant data from the response
+    };
   } catch (error) {
-    console.error('Error fetching invoice:', error);
+    console.error('Error in holdInvoiceLookup:', error);
     throw error;
   }
 }
 
-async function updateInvoiceStatus(payment_hash, status) {
+async function updateInvoiceStatus(payment_hash: string, status: string) {
   try {
     const updatedInvoice = await prisma.invoice.updateMany({
-      where: { payment_hash },
-      data: { status },
+      where: { payment_hash: payment_hash },
+      data: { status: status },
     });
 
-    console.log(`Updated invoice status for payment_hash ${payment_hash}: ${status}`);
+    console.log(`Updated invoice status for payment_hash ${payment_hash} to ${status}`);
     return updatedInvoice;
   } catch (error) {
-    console.error('Failed to update invoice status:', error);
+    console.error('Error updating invoice status:', error);
     throw error;
   }
 }
 
-// Syncs the invoice status from lightning with the database
 async function syncInvoicesWithNode() {
-  const agent = new https.Agent({ rejectUnauthorized: false });
-
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
       method: 'POST',
@@ -173,20 +172,21 @@ async function syncInvoicesWithNode() {
     const { invoices } = await response.json();
     console.log('Fetched invoices from node:', invoices);
 
-    const orderUpdates = {};
+    const orderUpdates: { [key: string]: string[] } = {};
 
     for (const invoice of invoices) {
       console.log(`Processing invoice with payment_hash: ${invoice.payment_hash}`);
-      const res = await prisma.invoice.findMany({
+      const dbInvoice = await prisma.invoice.findFirst({
         where: { payment_hash: invoice.payment_hash },
-        select: { status, order_id, invoice_type }
+        select: { status: true, order_id: true, invoice_type: true, user_type: true }
       });
 
-      if (res.length > 0) {
-        const { status, order_id, invoice_type } = res[0];
+      if (dbInvoice) {
+        const { status, order_id, invoice_type, user_type } = dbInvoice;
         let newStatus = invoice.status;
 
-        // Additional check for hold invoices
+        console.log(`Invoice details: type=${invoice_type}, user_type=${user_type}, current status=${status}`);
+
         if (invoice_type === 'hold') {
           console.log(`Checking hold invoice with payment_hash: ${invoice.payment_hash}`);
           const holdState = await holdInvoiceLookup(invoice.payment_hash);
@@ -196,12 +196,16 @@ async function syncInvoicesWithNode() {
             newStatus = 'ACCEPTED';
           } else if (holdState.state === 'canceled') {
             newStatus = 'canceled';
+          } else {
+            newStatus = holdState.state;
           }
+
+          console.log(`New status for ${user_type} hold invoice: ${newStatus}`);
         }
 
         if (status !== newStatus) {
           console.log(`Updating invoice status for payment_hash ${invoice.payment_hash} from ${status} to ${newStatus}`);
-          await prisma.invoice.updateMany({
+          await prisma.invoice.update({
             where: { payment_hash: invoice.payment_hash },
             data: { status: newStatus }
           });
@@ -241,7 +245,6 @@ async function syncInvoicesWithNode() {
   }
 }
 
-// Syncs payouts with node. 
 async function syncPayoutsWithNode() {
   const agent = new https.Agent({
     rejectUnauthorized: false
@@ -284,9 +287,9 @@ async function syncPayoutsWithNode() {
   }
 }
 
-async function generateBolt11Invoice(amount_msat, label, description, type, premium) {
+async function generateBolt11Invoice(amount_msat: number, label: string, description: string, type: string, premium: number) {
   const data = {
-    amount_msat: parseInt(amount_msat),
+    amount_msat: parseInt(amount_msat.toString()),
     label,
     description,
     cltv: 770,
@@ -321,7 +324,7 @@ async function generateBolt11Invoice(amount_msat, label, description, type, prem
   }
 }
 
-async function postFullAmountInvoice(amount_msat, label, description, orderId, orderType) {
+async function postFullAmountInvoice(amount_msat: number, label: string, description: string, orderId: number, orderType: string) {
   const data = {
       amount_msat,
       label,
@@ -362,7 +365,7 @@ async function postFullAmountInvoice(amount_msat, label, description, orderId, o
   }
 }
 
-async function handleFiatReceived(orderId) {
+async function handleFiatReceived(orderId: number) {
   try {
     await prisma.$transaction(async (prisma) => {
       const updateResult = await prisma.payout.updateMany({
@@ -392,7 +395,16 @@ async function handleFiatReceived(orderId) {
         throw new Error('Failed to pay payout invoice');
       }
 
-      console.log("Successfully paid payout invoice:", payoutInvoice);
+      const holdInvoice = await prisma.invoice.findFirst({
+        where: { order_id: orderId, invoice_type: 'hold' },
+        select: { payment_hash: true }
+      });
+
+      if (holdInvoice) {
+        await settleHoldInvoice(holdInvoice.payment_hash);
+      }
+
+      console.log("Successfully paid payout invoice and settled hold invoice");
     });
 
     console.log("Fiat received and payout processed successfully.");
@@ -402,7 +414,7 @@ async function handleFiatReceived(orderId) {
   }
 }
 
-async function payInvoice(lnInvoice) {
+async function payInvoice(lnInvoice: string) {
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/pay`, { 
       method: 'POST',
@@ -426,43 +438,46 @@ async function payInvoice(lnInvoice) {
   }
 }
 
-async function updatePayoutStatus(orderId, status) {
+async function updatePayoutStatus(orderId: number, status: string) {
   try {
     const result = await prisma.payout.updateMany({
       where: { order_id: orderId },
       data: { status }
     });
-
+  
     if (result.count === 0) {
       throw new Error('Failed to update payout status');
     }
-
+  
     return result;
   } catch (error) {
     throw error;
   }
 }
 
-async function settleHoldInvoice(lnInvoice) {
+async function settleHoldInvoice(paymentHash: string) {
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
+    console.log(`Attempting to settle hold invoice with payment hash: ${paymentHash}`);
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/settleholdinvoice`, {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
         'Rune': RUNE,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ payment_hash: lnInvoice }),
-      agent: new https.Agent({ rejectUnauthorized: false })
+      body: JSON.stringify({ payment_hash: paymentHash }),
+      agent: new https.Agent({ rejectUnauthorized: false }),
     });
-
+  
     if (!response.ok) {
       throw new Error(`HTTP Error: ${response.status}`);
     }
-
-    return await response.json();
+  
+    const result = await response.json();
+    console.log(`Hold invoice settled successfully:`, result);
+    return result;
   } catch (error) {
-    console.error('Failed to settle invoice:', error);
+    console.error('Failed to settle hold invoice:', error);
     throw error;
   }
 }
@@ -473,7 +488,7 @@ async function checkAndProcessPendingPayouts() {
       where: { status: 'fiat_received' },
       select: { order_id }
     });
-
+  
     for (const row of result) {
       await handleFiatReceived(row.order_id);
     }
@@ -482,10 +497,10 @@ async function checkAndProcessPendingPayouts() {
   }
 }
 
-const settleHoldInvoiceByHash = async (payment_hash) => {
+const settleHoldInvoiceByHash = async (payment_hash: string) => {
   try {
     console.log(`Settling hold invoice with payment_hash: ${payment_hash}`);
-
+  
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
       method: 'POST',
       headers: {
@@ -496,14 +511,14 @@ const settleHoldInvoiceByHash = async (payment_hash) => {
       body: JSON.stringify({ payment_hash }),
       agent: new https.Agent({ rejectUnauthorized: false }),
     });
-
+  
     if (!response.ok) {
       throw new Error(`HTTP Error: ${response.status}`);
     }
-
+  
     const settleData = await response.json();
     console.log('Settled hold invoice:', settleData);
-
+  
     return settleData;
   } catch (error) {
     console.error('Error in settling hold invoice:', error);
@@ -511,27 +526,25 @@ const settleHoldInvoiceByHash = async (payment_hash) => {
   }
 };
 
-const settleHoldInvoicesByOrderIdService = async (orderId) => {
+const settleHoldInvoicesByOrderIdService = async (orderId: number) => {
   try {
     await prisma.$transaction(async (prisma) => {
-      // Fetch all hold invoices for the order
       const invoices = await prisma.invoice.findMany({
         where: { order_id: orderId, invoice_type: 'hold', status: 'ACCEPTED' },
         select: { payment_hash }
       });
-
+  
       const settlePromises = invoices.map(async (invoice) => {
         const settleData = await settleHoldInvoiceByHash(invoice.payment_hash);
-
-        // Update the invoice status to 'settled' in the database
+  
         await prisma.invoice.updateMany({
           where: { payment_hash: invoice.payment_hash },
           data: { status: 'settled' }
         });
-
+  
         return settleData;
       });
-
+  
       const settledInvoices = await Promise.all(settlePromises);
       return settledInvoices;
     });
@@ -540,29 +553,24 @@ const settleHoldInvoicesByOrderIdService = async (orderId) => {
   }
 };
 
-// Generic chat functions that are not currently being used.
-// placeholders for alerting users when their chatroom is open
-async function notifyUsers(orderId) {
+async function notifyUsers(orderId: number) {
   console.log(`Chatroom is available for Order ID: ${orderId} for both y and Taker`);
 }
 
-async function handleChatroomTrigger(orderId) {
+async function handleChatroomTrigger(orderId: number) {
   // @ts-expect-error TS(2304): Cannot find name 'generateChatId'.
   const chatId = generateChatId(orderId); // Replace with your chatroom logic
   //console.log(`Chatroom ID ${chatId} is created for Order ID: ${orderId}`);
-  
-  // Notify both users that the chatroom is available
+    
   await notifyUsers(orderId);
-  
+    
   return chatId;
 }
 
-// Chatroom code that hooks into the chat app and returns the chatroom when invoices are marked as paid for the orderId
-
 const CHAT_APP_URL = 'http://localhost:3456';
-async function checkInvoicesAndCreateChatroom(orderId) {
+async function checkInvoicesAndCreateChatroom(orderId: number) {
   const agent = new https.Agent({ rejectUnauthorized: false });
-
+  
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
       method: 'POST',
@@ -572,37 +580,37 @@ async function checkInvoicesAndCreateChatroom(orderId) {
       },
       agent
     });
-
+  
     if (!response.ok) {
       console.error(`HTTP Error: ${response.status} while fetching invoices`);
       throw new Error(`HTTP Error: ${response.status}`);
     }
-
+  
     const { invoices } = await response.json();
-
+  
     try {
       const invoiceStatuses = await prisma.invoice.findMany({
         where: { order_id: orderId },
         select: { payment_hash, status, invoice_type }
       });
-
+  
       const invoiceMap = new Map(invoiceStatuses.map(row => [row.payment_hash, row]));
-
+  
       let allHoldInvoices = true;
       let fullInvoicePaid = false;
       let holdCount = 0;
-
+  
       for (const dbInvoice of invoiceMap.values()) {
-        const invoice = invoices.find((inv) => inv.payment_hash === dbInvoice.payment_hash);
-
+        const invoice = invoices.find((inv: any) => inv.payment_hash === dbInvoice.payment_hash);
+  
         if (!invoice) {
           console.log(`Invoice with payment_hash ${dbInvoice.payment_hash} not found in Lightning node response`);
           allHoldInvoices = false;
           break;
         }
-
+  
         console.log(`Checking invoice ${invoice.payment_hash} - dbStatus: ${dbInvoice.status}, apiStatus: ${invoice.status}, invoice_type: ${dbInvoice.invoice_type}`);
-
+  
         if (dbInvoice.invoice_type === 'full') {
           if (invoice.status !== 'paid') {
             console.log(`Full invoice with payment_hash ${dbInvoice.payment_hash} is not in paid status (apiStatus: ${invoice.status})`);
@@ -619,7 +627,7 @@ async function checkInvoicesAndCreateChatroom(orderId) {
             allHoldInvoices = false;
           }
         }
-
+  
         if (dbInvoice.status !== invoice.status) {
           await prisma.invoice.updateMany({
             where: { payment_hash: invoice.payment_hash, order_id: orderId },
@@ -628,7 +636,7 @@ async function checkInvoicesAndCreateChatroom(orderId) {
           console.log(`Invoice with payment_hash ${invoice.payment_hash} updated to '${invoice.status}'`);
         }
       }
-
+  
       if (holdCount >= 2 && fullInvoicePaid) {
         await prisma.order.update({
           where: { order_id: orderId },
@@ -642,7 +650,7 @@ async function checkInvoicesAndCreateChatroom(orderId) {
         console.log(`Not all invoices are in the required state for Order ID: ${orderId}`);
         return null;
       }
-
+  
     } catch (dbError) {
       console.error('Database transaction error:', dbError);
       throw dbError;
@@ -653,50 +661,47 @@ async function checkInvoicesAndCreateChatroom(orderId) {
   }
 }
 
-async function createChatroom(orderId) {
+async function createChatroom(orderId: number) {
   return `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
 }
 
-async function updateOrderStatus(orderId, status) {
+async function updateOrderStatus(orderId: number, status: string) {
   try {
     const result = await prisma.order.update({
       where: { order_id: orderId },
       data: { status }
     });
-
+  
     return result;
   } catch (error) {
     throw error;
   }
 }
 
-async function getHoldInvoicesByOrderId(orderId) {
+async function getHoldInvoicesByOrderId(orderId: number) {
   try {
     const result = await prisma.invoice.findMany({
       where: { order_id: orderId, invoice_type: 'hold', status: 'ACCEPTED' },
       select: { payment_hash }
     });
-
+  
     return result.map(row => row.payment_hash);
   } catch (error) {
     throw error;
   }
 }
 
-async function settleHoldInvoices(orderId) {
+async function settleHoldInvoices(orderId: number) {
   try {
     await prisma.$transaction(async (prisma) => {
-      // Update order status to 'trade_complete'
       await prisma.order.update({
         where: { order_id: orderId },
         data: { status: 'trade_complete' }
       });
-
-      // Get all hold invoices for the order
+  
       const holdInvoices = await getHoldInvoicesByOrderId(orderId);
       const settlePromises = holdInvoices.map(paymentHash => settleHoldInvoice(paymentHash));
-
-      // Settle all hold invoices
+  
       const settledInvoices = await Promise.all(settlePromises);
       return settledInvoices;
     });
@@ -705,17 +710,16 @@ async function settleHoldInvoices(orderId) {
   }
 }
 
-async function generateInvoice(amount_msat, description, label) {
+async function generateInvoice(amount_msat: number, description: string, label: string) {
   const data = {
-      amount_msat,  // Make sure this is in millisatoshis and the value is correct
-      label,        // Unique identifier for the invoice
-      description,  // Description for the invoice
-      cltv: 770     // Ensure this CLTV value is ACCEPTED by your Lightning service
+      amount_msat,
+      label,
+      description,
+      cltv: 770
   };
-
-  // Log the request data for debugging purposes
+  
   console.log('Sending data to generate invoice:', data);
-
+  
   try {
       const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
           method: 'POST',
@@ -727,103 +731,53 @@ async function generateInvoice(amount_msat, description, label) {
           body: JSON.stringify(data),
           agent: new https.Agent({ rejectUnauthorized: false }),
       });
-
-      // Read and log the full response body for debugging
+  
       const responseBody = await response.text();
       console.log('Received response body:', responseBody);
-
+  
       if (!response.ok) {
-          // Log detailed error message before throwing
           console.error(`HTTP Error: ${response.status} with body: ${responseBody}`);
           throw new Error(`HTTP Error: ${response.status}`);
       }
-
+  
       const invoiceData = JSON.parse(responseBody);
       if (!invoiceData.bolt11) {
           console.error('Response missing bolt11:', invoiceData);
           throw new Error('Bolt11 is missing in the response');
       }
-
-      // Log the successful invoice data retrieval
+  
       console.log('Received invoice data:', invoiceData);
-
+  
       return invoiceData;
   } catch (error) {
-      // Log and rethrow the error to be handled or logged further up the call stack
       console.error('Error in generating Bolt11 invoice:', error);
       throw error;
   }
 }
 
-export const checkInvoiceStatus = async (payment_hash) => {
+async function checkInvoicePayment(payment_hash: string) {
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
-      method: 'POST',
+    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice/${payment_hash}`, {
+      method: 'GET',
       headers: {
         'Accept': 'application/json',
         'Rune': RUNE,
-        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ payment_hash }),
-      agent: new https.Agent({ rejectUnauthorized: false }),
+      agent: new https.Agent({ rejectUnauthorized: false })
     });
 
     if (!response.ok) {
-      const responseBody = await response.text();
-      console.error(`HTTP Error: ${response.status} with body: ${responseBody}`);
       throw new Error(`HTTP Error: ${response.status}`);
     }
 
-    const data = await response.json();
-    if (data.invoices && data.invoices.length > 0) {
-      return data.invoices[0];
-    } else {
-      throw new Error('Invoice not found');
-    }
-  } catch (error) {
-    console.error('Error checking invoice status:', error);
-    throw error;
-  }
-};
-
-const checkInvoicePayment = async (payment_hash) => {
-  try {
-    const invoice = await checkInvoiceStatus(payment_hash);
-    return invoice.status === 'paid';
+    const invoiceData = await response.json();
+    return invoiceData.status === 'paid';
   } catch (error) {
     console.error('Error checking invoice payment:', error);
     throw error;
   }
-};
-
-// In services/invoiceService.js
-
-export async function fullInvoiceLookup(paymentHash) {
-  try {
-    console.log(`Attempting to look up invoice with payment hash: ${paymentHash}`);
-    const invoiceStatus = await holdInvoiceLookup(paymentHash);
-    console.log(`Invoice status received:`, invoiceStatus);
-    
-    if (invoiceStatus.state === 'SETTLED') {
-      console.log(`Updating database for paid invoice: ${paymentHash}`);
-      await prisma.invoice.update({
-        where: { payment_hash: paymentHash },
-        data: { 
-          status: 'paid',
-          amount_received_msat: BigInt(invoiceStatus.amount_received_msat),
-          paid_at: new Date(invoiceStatus.paid_at * 1000)
-        }
-      });
-      console.log(`Database updated successfully for invoice: ${paymentHash}`);
-    }
-    
-    return invoiceStatus;
-  } catch (error) {
-    console.error('Detailed error in fullInvoiceLookup:', error);
-    console.error('Error stack:', error.stack);
-    throw error;
-  }
 }
+
 export {
   postHoldinvoice,
   holdInvoiceLookup,
@@ -844,5 +798,5 @@ export {
   updateOrderStatus,  
   getHoldInvoicesByOrderId,
   generateInvoice,
-  checkInvoicePayment  
+  checkInvoicePayment
 };

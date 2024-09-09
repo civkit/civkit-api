@@ -12,45 +12,83 @@ import fetch from 'node-fetch';
 import https from 'https';
 import { config } from 'dotenv';
 import axios from 'axios';
-config(); // This line configures dotenv to load the environment variables
+config();
 const prisma = new PrismaClient();
 const agent = new https.Agent({
     rejectUnauthorized: false
 });
 const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
 const RUNE = process.env.RUNE;
-function postHoldinvoice(amount_msat, description) {
+function postHoldinvoice(amount_msat, description, orderId, userType) {
     return __awaiter(this, void 0, void 0, function* () {
-        const timestamp = Date.now(); // Generate a unique timestamp
-        const label = `invoice_${timestamp}`; // Create a unique label using the timestamp
-        console.log('Posting hold invoice with:', { amount_msat, label, description });
-        console.log('Using RUNE:', RUNE); // Log the rune to ensure it is correctly set
+        const orderIdNumber = typeof orderId === 'string' ? parseInt(orderId, 10) : orderId;
+        if (isNaN(orderIdNumber)) {
+            throw new Error('Invalid orderId provided');
+        }
+        const timestamp = Date.now();
+        const label = `invoice_${orderIdNumber}_${timestamp}`;
+        console.log('Posting hold invoice with:', { amount_msat, label, description, orderId: orderIdNumber, userType });
+        console.log('Using RUNE:', RUNE);
         try {
             if (!LIGHTNING_NODE_API_URL || !RUNE) {
                 throw new Error('LIGHTNING_NODE_API_URL or RUNE is not defined');
             }
-            const response = yield axios.post(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
-                amount_msat,
+            const holdAmount = Math.floor(amount_msat * 0.05);
+            console.log(`Adjusted hold amount: ${holdAmount} msat (5% of ${amount_msat} msat)`);
+            const existingInvoice = yield prisma.invoice.findFirst({
+                where: {
+                    order_id: orderIdNumber,
+                    invoice_type: 'hold',
+                    status: { in: ['pending', 'unpaid'] }
+                }
+            });
+            if (existingInvoice) {
+                console.log(`Existing hold invoice found for order ${orderIdNumber}`);
+                return {
+                    bolt11: existingInvoice.bolt11,
+                    payment_hash: existingInvoice.payment_hash,
+                    status: existingInvoice.status,
+                    invoice_type: 'hold'
+                };
+            }
+            const response = yield axios.post(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
+                amount_msat: holdAmount,
                 label,
-                description
+                description,
+                cltv: 144,
             }, {
                 headers: {
                     'Content-Type': 'application/json',
                     'Rune': RUNE
                 },
-                httpsAgent: agent // Ensure the agent is included here
+                httpsAgent: agent
             });
             console.log('Hold invoice response:', response.data);
             if (!response.data || !response.data.bolt11 || !response.data.payment_hash) {
                 throw new Error('Invalid response from Lightning Node API: ' + JSON.stringify(response.data));
             }
-            // Return the invoice data with invoice_type set to 'makerHold'
-            return {
+            const invoiceData = {
                 bolt11: response.data.bolt11,
                 payment_hash: response.data.payment_hash,
                 status: 'unpaid',
-                invoice_type: 'makerHold' // Ensure this field is included
+                invoice_type: 'hold'
             };
+            const savedInvoice = yield prisma.invoice.create({
+                data: {
+                    order_id: orderIdNumber,
+                    bolt11: invoiceData.bolt11,
+                    amount_msat: BigInt(holdAmount),
+                    description: description,
+                    status: invoiceData.status,
+                    created_at: new Date(),
+                    expires_at: new Date(response.data.expires_at * 1000),
+                    payment_hash: invoiceData.payment_hash,
+                    invoice_type: 'hold',
+                    user_type: userType || null,
+                },
+            });
+            console.log('Hold invoice saved to database:', savedInvoice);
+            return invoiceData;
         }
         catch (error) {
             console.error('Error posting hold invoice:', error.response ? error.response.data : error.message);
@@ -58,16 +96,15 @@ function postHoldinvoice(amount_msat, description) {
         }
     });
 }
-// Remaining functions remain unchanged
 function holdInvoiceLookup(payment_hash) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
+            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
                 method: 'POST',
                 headers: {
+                    'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'Rune': RUNE,
-                    'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ payment_hash }),
                 agent: new https.Agent({ rejectUnauthorized: false })
@@ -76,20 +113,18 @@ function holdInvoiceLookup(payment_hash) {
                 throw new Error(`HTTP Error: ${response.status}`);
             }
             const data = yield response.json();
-            if (data.invoices && data.invoices.length > 0) {
-                const invoice = data.invoices[0];
-                // Check if the invoice status is 'paid' and update the database
-                if (invoice.status === 'paid') {
-                    yield updateInvoiceStatus(payment_hash, 'paid');
-                }
-                return invoice;
+            console.log('Hold invoice lookup response:', data);
+            if (data.state === 'ACCEPTED') {
+                yield updateInvoiceStatus(payment_hash, 'paid');
             }
-            else {
-                throw new Error('Invoice not found');
-            }
+            return {
+                state: data.state,
+                htlc_expiry: data.htlc_expiry,
+                // Include other relevant data from the response
+            };
         }
         catch (error) {
-            console.error('Error fetching invoice:', error);
+            console.error('Error in holdInvoiceLookup:', error);
             throw error;
         }
     });
@@ -98,22 +133,20 @@ function updateInvoiceStatus(payment_hash, status) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             const updatedInvoice = yield prisma.invoice.updateMany({
-                where: { payment_hash },
-                data: { status },
+                where: { payment_hash: payment_hash },
+                data: { status: status },
             });
-            console.log(`Updated invoice status for payment_hash ${payment_hash}: ${status}`);
+            console.log(`Updated invoice status for payment_hash ${payment_hash} to ${status}`);
             return updatedInvoice;
         }
         catch (error) {
-            console.error('Failed to update invoice status:', error);
+            console.error('Error updating invoice status:', error);
             throw error;
         }
     });
 }
-// Syncs the invoice status from lightning with the database
 function syncInvoicesWithNode() {
     return __awaiter(this, void 0, void 0, function* () {
-        const agent = new https.Agent({ rejectUnauthorized: false });
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
                 method: 'POST',
@@ -131,14 +164,14 @@ function syncInvoicesWithNode() {
             const orderUpdates = {};
             for (const invoice of invoices) {
                 console.log(`Processing invoice with payment_hash: ${invoice.payment_hash}`);
-                const res = yield prisma.invoice.findMany({
+                const dbInvoice = yield prisma.invoice.findFirst({
                     where: { payment_hash: invoice.payment_hash },
-                    select: { status, order_id, invoice_type }
+                    select: { status: true, order_id: true, invoice_type: true, user_type: true }
                 });
-                if (res.length > 0) {
-                    const { status, order_id, invoice_type } = res[0];
+                if (dbInvoice) {
+                    const { status, order_id, invoice_type, user_type } = dbInvoice;
                     let newStatus = invoice.status;
-                    // Additional check for hold invoices
+                    console.log(`Invoice details: type=${invoice_type}, user_type=${user_type}, current status=${status}`);
                     if (invoice_type === 'hold') {
                         console.log(`Checking hold invoice with payment_hash: ${invoice.payment_hash}`);
                         const holdState = yield holdInvoiceLookup(invoice.payment_hash);
@@ -149,10 +182,14 @@ function syncInvoicesWithNode() {
                         else if (holdState.state === 'canceled') {
                             newStatus = 'canceled';
                         }
+                        else {
+                            newStatus = holdState.state;
+                        }
+                        console.log(`New status for ${user_type} hold invoice: ${newStatus}`);
                     }
                     if (status !== newStatus) {
                         console.log(`Updating invoice status for payment_hash ${invoice.payment_hash} from ${status} to ${newStatus}`);
-                        yield prisma.invoice.updateMany({
+                        yield prisma.invoice.update({
                             where: { payment_hash: invoice.payment_hash },
                             data: { status: newStatus }
                         });
@@ -192,7 +229,6 @@ function syncInvoicesWithNode() {
         }
     });
 }
-// Syncs payouts with node. 
 function syncPayoutsWithNode() {
     return __awaiter(this, void 0, void 0, function* () {
         const agent = new https.Agent({
@@ -235,7 +271,7 @@ function syncPayoutsWithNode() {
 function generateBolt11Invoice(amount_msat, label, description, type, premium) {
     return __awaiter(this, void 0, void 0, function* () {
         const data = {
-            amount_msat: parseInt(amount_msat),
+            amount_msat: parseInt(amount_msat.toString()),
             label,
             description,
             cltv: 770,
@@ -332,7 +368,14 @@ function handleFiatReceived(orderId) {
                 if (!paymentResult || paymentResult.status !== 'complete') {
                     throw new Error('Failed to pay payout invoice');
                 }
-                console.log("Successfully paid payout invoice:", payoutInvoice);
+                const holdInvoice = yield prisma.invoice.findFirst({
+                    where: { order_id: orderId, invoice_type: 'hold' },
+                    select: { payment_hash: true }
+                });
+                if (holdInvoice) {
+                    yield settleHoldInvoice(holdInvoice.payment_hash);
+                }
+                console.log("Successfully paid payout invoice and settled hold invoice");
             }));
             console.log("Fiat received and payout processed successfully.");
         }
@@ -383,26 +426,29 @@ function updatePayoutStatus(orderId, status) {
         }
     });
 }
-function settleHoldInvoice(lnInvoice) {
+function settleHoldInvoice(paymentHash) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicesettle`, {
+            console.log(`Attempting to settle hold invoice with payment hash: ${paymentHash}`);
+            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/settleholdinvoice`, {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
                     'Rune': RUNE,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ payment_hash: lnInvoice }),
-                agent: new https.Agent({ rejectUnauthorized: false })
+                body: JSON.stringify({ payment_hash: paymentHash }),
+                agent: new https.Agent({ rejectUnauthorized: false }),
             });
             if (!response.ok) {
                 throw new Error(`HTTP Error: ${response.status}`);
             }
-            return yield response.json();
+            const result = yield response.json();
+            console.log(`Hold invoice settled successfully:`, result);
+            return result;
         }
         catch (error) {
-            console.error('Failed to settle invoice:', error);
+            console.error('Failed to settle hold invoice:', error);
             throw error;
         }
     });
@@ -451,14 +497,12 @@ const settleHoldInvoiceByHash = (payment_hash) => __awaiter(void 0, void 0, void
 const settleHoldInvoicesByOrderIdService = (orderId) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield prisma.$transaction((prisma) => __awaiter(void 0, void 0, void 0, function* () {
-            // Fetch all hold invoices for the order
             const invoices = yield prisma.invoice.findMany({
                 where: { order_id: orderId, invoice_type: 'hold', status: 'ACCEPTED' },
                 select: { payment_hash }
             });
             const settlePromises = invoices.map((invoice) => __awaiter(void 0, void 0, void 0, function* () {
                 const settleData = yield settleHoldInvoiceByHash(invoice.payment_hash);
-                // Update the invoice status to 'settled' in the database
                 yield prisma.invoice.updateMany({
                     where: { payment_hash: invoice.payment_hash },
                     data: { status: 'settled' }
@@ -473,8 +517,6 @@ const settleHoldInvoicesByOrderIdService = (orderId) => __awaiter(void 0, void 0
         throw error;
     }
 });
-// Generic chat functions that are not currently being used.
-// placeholders for alerting users when their chatroom is open
 function notifyUsers(orderId) {
     return __awaiter(this, void 0, void 0, function* () {
         console.log(`Chatroom is available for Order ID: ${orderId} for both y and Taker`);
@@ -485,12 +527,10 @@ function handleChatroomTrigger(orderId) {
         // @ts-expect-error TS(2304): Cannot find name 'generateChatId'.
         const chatId = generateChatId(orderId); // Replace with your chatroom logic
         //console.log(`Chatroom ID ${chatId} is created for Order ID: ${orderId}`);
-        // Notify both users that the chatroom is available
         yield notifyUsers(orderId);
         return chatId;
     });
 }
-// Chatroom code that hooks into the chat app and returns the chatroom when invoices are marked as paid for the orderId
 const CHAT_APP_URL = 'http://localhost:3456';
 function checkInvoicesAndCreateChatroom(orderId) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -616,15 +656,12 @@ function settleHoldInvoices(orderId) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             yield prisma.$transaction((prisma) => __awaiter(this, void 0, void 0, function* () {
-                // Update order status to 'trade_complete'
                 yield prisma.order.update({
                     where: { order_id: orderId },
                     data: { status: 'trade_complete' }
                 });
-                // Get all hold invoices for the order
                 const holdInvoices = yield getHoldInvoicesByOrderId(orderId);
                 const settlePromises = holdInvoices.map(paymentHash => settleHoldInvoice(paymentHash));
-                // Settle all hold invoices
                 const settledInvoices = yield Promise.all(settlePromises);
                 return settledInvoices;
             }));
@@ -637,12 +674,11 @@ function settleHoldInvoices(orderId) {
 function generateInvoice(amount_msat, description, label) {
     return __awaiter(this, void 0, void 0, function* () {
         const data = {
-            amount_msat, // Make sure this is in millisatoshis and the value is correct
-            label, // Unique identifier for the invoice
-            description, // Description for the invoice
-            cltv: 770 // Ensure this CLTV value is ACCEPTED by your Lightning service
+            amount_msat,
+            label,
+            description,
+            cltv: 770
         };
-        // Log the request data for debugging purposes
         console.log('Sending data to generate invoice:', data);
         try {
             const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice`, {
@@ -655,11 +691,9 @@ function generateInvoice(amount_msat, description, label) {
                 body: JSON.stringify(data),
                 agent: new https.Agent({ rejectUnauthorized: false }),
             });
-            // Read and log the full response body for debugging
             const responseBody = yield response.text();
             console.log('Received response body:', responseBody);
             if (!response.ok) {
-                // Log detailed error message before throwing
                 console.error(`HTTP Error: ${response.status} with body: ${responseBody}`);
                 throw new Error(`HTTP Error: ${response.status}`);
             }
@@ -668,81 +702,34 @@ function generateInvoice(amount_msat, description, label) {
                 console.error('Response missing bolt11:', invoiceData);
                 throw new Error('Bolt11 is missing in the response');
             }
-            // Log the successful invoice data retrieval
             console.log('Received invoice data:', invoiceData);
             return invoiceData;
         }
         catch (error) {
-            // Log and rethrow the error to be handled or logged further up the call stack
             console.error('Error in generating Bolt11 invoice:', error);
             throw error;
         }
     });
 }
-export const checkInvoiceStatus = (payment_hash) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Rune': RUNE,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ payment_hash }),
-            agent: new https.Agent({ rejectUnauthorized: false }),
-        });
-        if (!response.ok) {
-            const responseBody = yield response.text();
-            console.error(`HTTP Error: ${response.status} with body: ${responseBody}`);
-            throw new Error(`HTTP Error: ${response.status}`);
-        }
-        const data = yield response.json();
-        if (data.invoices && data.invoices.length > 0) {
-            return data.invoices[0];
-        }
-        else {
-            throw new Error('Invoice not found');
-        }
-    }
-    catch (error) {
-        console.error('Error checking invoice status:', error);
-        throw error;
-    }
-});
-const checkInvoicePayment = (payment_hash) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const invoice = yield checkInvoiceStatus(payment_hash);
-        return invoice.status === 'paid';
-    }
-    catch (error) {
-        console.error('Error checking invoice payment:', error);
-        throw error;
-    }
-});
-// In services/invoiceService.js
-export function fullInvoiceLookup(paymentHash) {
+function checkInvoicePayment(payment_hash) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            console.log(`Attempting to look up invoice with payment hash: ${paymentHash}`);
-            const invoiceStatus = yield holdInvoiceLookup(paymentHash);
-            console.log(`Invoice status received:`, invoiceStatus);
-            if (invoiceStatus.state === 'SETTLED') {
-                console.log(`Updating database for paid invoice: ${paymentHash}`);
-                yield prisma.invoice.update({
-                    where: { payment_hash: paymentHash },
-                    data: {
-                        status: 'paid',
-                        amount_received_msat: BigInt(invoiceStatus.amount_received_msat),
-                        paid_at: new Date(invoiceStatus.paid_at * 1000)
-                    }
-                });
-                console.log(`Database updated successfully for invoice: ${paymentHash}`);
+            const response = yield fetch(`${LIGHTNING_NODE_API_URL}/v1/invoice/${payment_hash}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Rune': RUNE,
+                },
+                agent: new https.Agent({ rejectUnauthorized: false })
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP Error: ${response.status}`);
             }
-            return invoiceStatus;
+            const invoiceData = yield response.json();
+            return invoiceData.status === 'paid';
         }
         catch (error) {
-            console.error('Detailed error in fullInvoiceLookup:', error);
-            console.error('Error stack:', error.stack);
+            console.error('Error checking invoice payment:', error);
             throw error;
         }
     });

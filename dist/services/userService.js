@@ -9,6 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import * as fs from "fs";
 import { generateInvoice, checkInvoicePayment } from './invoiceService.js';
 const prisma = new PrismaClient();
 export const registerUser = (username, password) => __awaiter(void 0, void 0, void 0, function* () {
@@ -35,7 +36,7 @@ export const registerUser = (username, password) => __awaiter(void 0, void 0, vo
                 password: hashedPassword,
                 invoice,
                 payment_hash,
-                status: 'pending'
+                status: 'pending',
             }
         });
         return user;
@@ -68,7 +69,9 @@ export const authenticateUser = (username, password) => __awaiter(void 0, void 0
         });
         if (!user)
             throw new Error('User not found');
+        console.log(`Comparing password: ${password} with stored hash.`);
         const isPasswordValid = yield bcrypt.compare(password, user.password);
+        console.log(`Password valid: ${isPasswordValid}`);
         if (!isPasswordValid)
             throw new Error('Invalid credentials');
         return user;

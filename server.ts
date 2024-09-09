@@ -8,7 +8,6 @@ import {
   syncInvoicesWithNode,
   syncPayoutsWithNode,
   handleFiatReceived,
-  fullInvoiceLookup,
   settleHoldInvoicesByOrderIdService,
 } from './services/invoiceService.js';
 import { registerUser, authenticateUser,   pollAndCompleteRegistration } from './services/userService.js';
@@ -105,12 +104,18 @@ app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/holdinvoicelookup', authenticateJWT, async (req, res) => {
+  const { payment_hash } = req.body;
+
+  if (!payment_hash) {
+    return res.status(400).json({ error: 'Payment hash is required' });
+  }
+
   try {
-    const result = await holdInvoiceLookup(req.body.payment_hash);
+    const result = await holdInvoiceLookup(payment_hash);
     res.json(result);
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: error.message });
+    console.error('Error in /api/holdinvoicelookup:', error);
+    res.status(500).json({ error: 'Internal server error', message: error.message });
   }
 });
 
