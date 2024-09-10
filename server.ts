@@ -472,7 +472,6 @@ export async function createTakerHoldInvoice(orderId: number, amount_msat: numbe
         order_id: orderId,
         user_type: 'taker',
         invoice_type: 'hold',
-        status: { in: ['pending', 'unpaid'] }
       }
     });
 
