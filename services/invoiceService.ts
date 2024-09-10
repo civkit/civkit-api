@@ -571,98 +571,49 @@ async function handleChatroomTrigger(orderId: number) {
 
 const CHAT_APP_URL = 'http://localhost:3456';
 async function checkInvoicesAndCreateChatroom(orderId: number) {
-  const agent = new https.Agent({ rejectUnauthorized: false });
-  
+  console.log(`[checkInvoicesAndCreateChatroom] Starting process for Order ID: ${orderId}`);
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Rune': RUNE,
-      },
-      agent
+    const allInvoices = await prisma.invoice.findMany({
+      where: { order_id: orderId }
     });
-  
-    if (!response.ok) {
-      console.error(`HTTP Error: ${response.status} while fetching invoices`);
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
-  
-    const { invoices } = await response.json();
-  
-    try {
-      const invoiceStatuses = await prisma.invoice.findMany({
-        where: { order_id: orderId },
-        select: { payment_hash, status, invoice_type }
+    console.log(`[checkInvoicesAndCreateChatroom] Found ${allInvoices.length} invoices for Order ID: ${orderId}`);
+
+    allInvoices.forEach((invoice, index) => {
+      console.log(`[checkInvoicesAndCreateChatroom] Invoice ${index + 1} details:`, {
+        invoice_id: invoice.invoice_id,
+        status: invoice.status,
+        invoice_type: invoice.invoice_type,
+        user_type: invoice.user_type,
+        amount_msat: invoice.amount_msat.toString()
       });
-  
-      const invoiceMap = new Map(invoiceStatuses.map(row => [row.payment_hash, row]));
-  
-      let allHoldInvoices = true;
-      let fullInvoicePaid = false;
-      let holdCount = 0;
-  
-      for (const dbInvoice of invoiceMap.values()) {
-        const invoice = invoices.find((inv: any) => inv.payment_hash === dbInvoice.payment_hash);
-  
-        if (!invoice) {
-          console.log(`Invoice with payment_hash ${dbInvoice.payment_hash} not found in Lightning node response`);
-          allHoldInvoices = false;
-          break;
-        }
-  
-        console.log(`Checking invoice ${invoice.payment_hash} - dbStatus: ${dbInvoice.status}, apiStatus: ${invoice.status}, invoice_type: ${dbInvoice.invoice_type}`);
-  
-        if (dbInvoice.invoice_type === 'full') {
-          if (invoice.status !== 'paid') {
-            console.log(`Full invoice with payment_hash ${dbInvoice.payment_hash} is not in paid status (apiStatus: ${invoice.status})`);
-            fullInvoicePaid = false;
-            allHoldInvoices = false;
-            break;
-          } else {
-            fullInvoicePaid = true;
-          }
-        } else if (dbInvoice.invoice_type === 'hold') {
-          if (invoice.status === 'hold') {
-            holdCount += 1;
-          } else {
-            allHoldInvoices = false;
-          }
-        }
-  
-        if (dbInvoice.status !== invoice.status) {
-          await prisma.invoice.updateMany({
-            where: { payment_hash: invoice.payment_hash, order_id: orderId },
-            data: { status: invoice.status }
-          });
-          console.log(`Invoice with payment_hash ${invoice.payment_hash} updated to '${invoice.status}'`);
-        }
-      }
-  
-      if (holdCount >= 2 && fullInvoicePaid) {
-        await prisma.order.update({
-          where: { order_id: orderId },
-          data: { status: 'chat_open' }
-        });
-        const chatroomUrl = await createChatroom(orderId);
-        console.log(`Chatroom can be created for Order ID: ${orderId}. Redirect to: ${chatroomUrl}`);
-        return chatroomUrl;
-      } else {
-        console.log(`allHoldInvoices: ${allHoldInvoices}, fullInvoicePaid: ${fullInvoicePaid}`);
-        console.log(`Not all invoices are in the required state for Order ID: ${orderId}`);
-        return null;
-      }
-  
-    } catch (dbError) {
-      console.error('Database transaction error:', dbError);
-      throw dbError;
+    });
+
+    const allInvoicesPaid = allInvoices.length === 3 && 
+                            allInvoices.every(invoice => invoice.status === 'paid');
+
+    console.log(`[checkInvoicesAndCreateChatroom] All invoices paid for Order ID ${orderId}: ${allInvoicesPaid}`);
+
+    if (allInvoicesPaid) {
+      console.log(`[checkInvoicesAndCreateChatroom] Updating order ${orderId} status to chat_open`);
+      const updatedOrder = await prisma.order.update({
+        where: { order_id: orderId },
+        data: { status: 'chat_open' }
+      });
+      console.log(`[checkInvoicesAndCreateChatroom] Order ${orderId} update result:`, updatedOrder);
+
+      const chatroomUrl = await createChatroom(orderId);
+      console.log(`[checkInvoicesAndCreateChatroom] Chatroom created for Order ID: ${orderId}. URL: ${chatroomUrl}`);
+
+      return chatroomUrl;
+    } else {
+      console.log(`[checkInvoicesAndCreateChatroom] Not all invoices are paid for Order ID: ${orderId}. No chatroom created.`);
+      return null;
     }
   } catch (error) {
-    console.error('Error checking and updating invoices:', error);
+    console.error(`[checkInvoicesAndCreateChatroom] Error processing Order ID ${orderId}:`, error);
     throw error;
   }
 }
-
 async function createChatroom(orderId: number) {
   return `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
 }
@@ -757,7 +708,7 @@ async function generateInvoice(amount_msat: number, description: string, label: 
   }
 }
 
-async function fullInvoiceLookup(paymentHash) {
+async function fullInvoiceLookup(paymentHash: string) {
   try {
     console.log(`Performing full invoice lookup for payment_hash: ${paymentHash}`);
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
@@ -776,16 +727,24 @@ async function fullInvoiceLookup(paymentHash) {
     const { invoices } = await response.json();
     console.log('Lightning node response:', invoices);
     
-    // Find the specific invoice we're looking for
     const invoice = invoices.find(inv => inv.payment_hash === paymentHash);
     
     if (!invoice) {
       throw new Error('Invoice not found');
     }
     
+    // Update the database if the invoice is paid
+    if (invoice.status === 'paid') {
+      await prisma.invoice.update({
+        where: { payment_hash: paymentHash },
+        data: { status: 'paid', paid_at: new Date() },
+      });
+      console.log(`Updated invoice ${paymentHash} to paid status in database`);
+    }
+    
     return invoice;
   } catch (error) {
-    console.error('Error looking up full invoice:', error);
+    console.error('Error looking up and updating full invoice:', error);
     throw error;
   }
 }
@@ -845,5 +804,5 @@ export {
   getHoldInvoicesByOrderId,
   generateInvoice,
   checkInvoicePayment,
-  fullInvoiceLookup
+  fullInvoiceLookup,
 };

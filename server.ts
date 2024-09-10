@@ -9,7 +9,9 @@ import {
   syncPayoutsWithNode,
   handleFiatReceived,
   settleHoldInvoicesByOrderIdService,
-  fullInvoiceLookup
+  fullInvoiceLookup,
+  checkInvoicesAndCreateChatroom,
+  postFullAmountInvoice
 } from './services/invoiceService.js';
 import { registerUser, authenticateUser,   pollAndCompleteRegistration } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
@@ -141,7 +143,6 @@ app.post('/api/sync-invoices', authenticateJWT, async (req, res) => {
     res.status(200).json({ message: 'Invoices synchronized successfully' });
   } catch (error) {
     console.error('Failed to sync invoices:', error);
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Failed to synchronize invoices', error: error.message });
   }
 });
@@ -336,52 +337,39 @@ app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
 
 app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
-  console.log(`Fetching full invoice for orderId: ${orderId}`);
   try {
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        order_id: parseInt(orderId),
-        invoice_type: 'full'
-      }
+    let invoice = await prisma.invoice.findFirst({
+      where: { order_id: parseInt(orderId), invoice_type: 'full' }
     });
-    console.log('Found invoice:', invoice);
 
     if (!invoice) {
-      console.log('No full invoice found for this order');
-      return res.status(404).json({ error: 'Full invoice not found for this order' });
-    }
+      const order = await prisma.order.findUnique({ where: { order_id: parseInt(orderId) } });
+      if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    console.log('Looking up invoice status for payment_hash:', invoice.payment_hash);
-    const invoiceStatus = await fullInvoiceLookup(invoice.payment_hash);
-    console.log('Invoice status from Lightning node:', invoiceStatus);
+      const label = `full_invoice_${orderId}_${Date.now()}`;
+      const description = `Full invoice for order ${orderId}`;
+      const invoiceData = await postFullAmountInvoice(order.amount_msat, label, description, order.order_id, order.type.toString());
 
-    // Update the invoice status if it's paid
-    if (invoiceStatus.status === 'paid' && invoice.status !== 'paid') {
-      await prisma.invoice.update({
-        where: { invoice_id: invoice.invoice_id },
-        data: { status: 'paid' }
+      invoice = await prisma.invoice.create({
+        data: {
+          order_id: parseInt(orderId),
+          bolt11: invoiceData.bolt11,
+          amount_msat: BigInt(order.amount_msat),
+          description,
+          status: 'unpaid',
+          created_at: new Date(),
+          expires_at: new Date(invoiceData.expires_at * 1000),
+          payment_hash: invoiceData.payment_hash,
+          invoice_type: 'full',
+          user_type: 'taker'
+        }
       });
-      console.log(`Updated invoice ${invoice.invoice_id} status to paid`);
     }
 
-    // Refresh the invoice data
-    const updatedInvoice = await prisma.invoice.findUnique({
-      where: { invoice_id: invoice.invoice_id }
-    });
-
-    // Convert BigInt to String for JSON serialization
-    const serializedInvoice = {
-      ...updatedInvoice,
-      amount_msat: updatedInvoice.amount_msat.toString(),
-      amount_received_msat: updatedInvoice.amount_received_msat ? updatedInvoice.amount_received_msat.toString() : null,
-      created_at: updatedInvoice.created_at?.toISOString(),
-      expires_at: updatedInvoice.expires_at?.toISOString()
-    };
-
-    res.status(200).json({ invoice: serializedInvoice, lightningStatus: invoiceStatus });
-  } catch (err) {
-    console.error('Error fetching full invoice:', err);
-    res.status(500).json({ error: 'An error occurred while fetching the full invoice' });
+    res.json({ invoice: { ...invoice, amount_msat: invoice.amount_msat.toString() } });
+  } catch (error) {
+    console.error('Error fetching or creating full invoice:', error);
+    res.status(500).json({ error: 'Failed to fetch or create full invoice' });
   }
 });
 
@@ -552,6 +540,74 @@ function serializeBigInt(data: any): any {
   }
   return data;
 }
+
+app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
+  const { orderId } = req.body;
+  console.log(`[/api/check-and-create-chatroom] Received request for Order ID: ${orderId}`);
+  try {
+    const chatroomUrl = await checkInvoicesAndCreateChatroom(orderId);
+    if (chatroomUrl) {
+      console.log(`[/api/check-and-create-chatroom] Chatroom created for Order ID ${orderId}. URL: ${chatroomUrl}`);
+      res.status(200).json({ chatroomUrl });
+    } else {
+      console.log(`[/api/check-and-create-chatroom] No chatroom created for Order ID ${orderId}. Not all invoices are paid.`);
+      res.status(202).json({ message: 'Not all invoices are paid yet' });
+    }
+  } catch (error) {
+    console.error('[/api/check-and-create-chatroom] Error:', error);
+    res.status(500).json({ error: 'Internal server error', message: error.message });
+  }
+});
+
+app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const dbInvoice = await prisma.invoice.findFirst({
+      where: { 
+        order_id: parseInt(orderId), 
+        invoice_type: 'full' 
+      }
+    });
+
+    if (!dbInvoice) {
+      return res.status(404).json({ error: 'Full invoice not found' });
+    }
+
+    const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {}, {
+      headers: { 
+        'Accept': 'application/json', 
+        'Rune': RUNE
+      },
+      httpsAgent: agent
+    });
+
+    const { invoices } = response.data;
+
+    const nodeInvoice = invoices.find(inv => inv.payment_hash === dbInvoice.payment_hash);
+
+    if (!nodeInvoice) {
+      return res.status(404).json({ error: 'Invoice not found on Lightning node' });
+    }
+
+    console.log(`Full invoice status for order ${orderId}: ${nodeInvoice.status}`);
+
+    if (nodeInvoice.status === 'paid' && dbInvoice.status !== 'paid') {
+      await prisma.invoice.updateMany({
+        where: { 
+          order_id: parseInt(orderId),
+          invoice_type: 'full'
+        },
+        data: { status: 'paid' }
+      });
+      console.log(`Updated database status to paid for order ${orderId}`);
+    }
+
+    res.json({ status: nodeInvoice.status });
+  } catch (error) {
+    console.error('Error checking full invoice:', error);
+    res.status(500).json({ error: 'Failed to check full invoice' });
+  }
+});
 
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Server is working' });
