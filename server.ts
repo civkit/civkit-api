@@ -463,7 +463,10 @@ app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
 });
 
 export async function createTakerHoldInvoice(orderId: number, amount_msat: number, description: string) {
-  console.log(`[createTakerHoldInvoice] Starting for orderId: ${orderId}`);
+  console.log(` [createTakerHoldInvoice] Starting for orderId: ${orderId}`);
+
+  // Add this line to calculate 5%
+  const holdAmount = Math.floor(amount_msat * 0.05);
 
   return await prisma.$transaction(async (prisma) => {
     // Check for existing invoice within the transaction
@@ -488,10 +491,10 @@ export async function createTakerHoldInvoice(orderId: number, amount_msat: numbe
     // Now create the hold invoice on the Lightning node
     try {
       const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
-        amount_msat,
+        amount_msat: holdAmount, // Use holdAmount instead of amount_msat
         label,
         description,
-        cltv: 144, // You may need to adjust this value
+        cltv: 144,
       }, {
         headers: { 
           'Content-Type': 'application/json',
