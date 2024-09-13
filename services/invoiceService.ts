@@ -570,7 +570,7 @@ async function handleChatroomTrigger(orderId: number) {
 }
 
 const CHAT_APP_URL = 'http://localhost:3456';
-async function checkInvoicesAndCreateChatroom(orderId: number) {
+async function checkInvoicesAndCreateChatroom(orderId: number, userId: number) {
   console.log(`[checkInvoicesAndCreateChatroom] Starting process for Order ID: ${orderId}`);
   try {
     const allInvoices = await prisma.invoice.findMany({
@@ -601,13 +601,25 @@ async function checkInvoicesAndCreateChatroom(orderId: number) {
       });
       console.log(`[checkInvoicesAndCreateChatroom] Order ${orderId} update result:`, updatedOrder);
 
-      const chatroomUrl = await createChatroom(orderId);
-      console.log(`[checkInvoicesAndCreateChatroom] Chatroom created for Order ID: ${orderId}. URL: ${chatroomUrl}`);
+      const order = await prisma.order.findUnique({
+        where: { order_id: orderId },
+      });
 
-      return chatroomUrl;
+      let userRole = 'unknown';
+      if (order.customer_id === userId) {
+        userRole = 'maker';
+      } else if (order.taker_customer_id === userId) {
+        userRole = 'taker';
+      }
+
+      const makeOfferUrl = `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
+      const acceptOfferUrl = `${CHAT_APP_URL}/ui/chat/accept-offer?orderId=${orderId}`;
+      console.log(`[checkInvoicesAndCreateChatroom] Chatroom URLs created for Order ID: ${orderId}`);
+
+      return { makeOfferUrl, acceptOfferUrl, userRole };
     } else {
       console.log(`[checkInvoicesAndCreateChatroom] Not all invoices are paid for Order ID: ${orderId}. No chatroom created.`);
-      return null;
+      return { makeOfferUrl: null, acceptOfferUrl: null, userRole: null };
     }
   } catch (error) {
     console.error(`[checkInvoicesAndCreateChatroom] Error processing Order ID ${orderId}:`, error);

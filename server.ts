@@ -200,27 +200,16 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
   const { orderId } = req.body;
   const userId = req.user.id;
-
   try {
-    // Fetch the order details
-    const order = await prisma.order.findUnique({
-      where: { order_id: parseInt(orderId) },
-    });
-
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    // Check if the user is the maker or taker of the order
-    if (order.customer_id !== userId && order.taker_customer_id !== userId) {
-      return res.status(403).json({ message: 'You are not authorized to access this chatroom' });
-    }
-
-    // Proceed to create or check chatroom
-    const { makeOfferUrl, acceptOfferUrl } = await checkAndCreateChatroom(orderId);
-    res.status(200).json({ makeChatUrl: makeOfferUrl, acceptChatUrl: acceptOfferUrl });
+    const result = await checkInvoicesAndCreateChatroom(orderId, userId);
+    res.status(200).json(result);
   } catch (error) {
-    res.status(500).json({ message: 'Failed to create chatroom', error: error.message });
+    if (error.message === 'User is neither maker nor taker of this order') {
+      res.status(403).json({ error: 'Unauthorized access to this order' });
+    } else {
+      console.error('[/api/check-and-create-chatroom] Error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 });
 
@@ -540,24 +529,6 @@ function serializeBigInt(data: any): any {
   }
   return data;
 }
-
-app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
-  const { orderId } = req.body;
-  console.log(`[/api/check-and-create-chatroom] Received request for Order ID: ${orderId}`);
-  try {
-    const chatroomUrl = await checkInvoicesAndCreateChatroom(orderId);
-    if (chatroomUrl) {
-      console.log(`[/api/check-and-create-chatroom] Chatroom created for Order ID ${orderId}. URL: ${chatroomUrl}`);
-      res.status(200).json({ chatroomUrl });
-    } else {
-      console.log(`[/api/check-and-create-chatroom] No chatroom created for Order ID ${orderId}. Not all invoices are paid.`);
-      res.status(202).json({ message: 'Not all invoices are paid yet' });
-    }
-  } catch (error) {
-    console.error('[/api/check-and-create-chatroom] Error:', error);
-    res.status(500).json({ error: 'Internal server error', message: error.message });
-  }
-});
 
 app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
