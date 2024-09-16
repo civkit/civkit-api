@@ -50,11 +50,22 @@ const agent = new https.Agent({
 
 app.use(express.json());
 
+const allowedOrigins = [
+  'http://localhost:3001',
+  'https://0714-112-134-238-18.ngrok-free.app', // Add your ngrok URL here
+  // Add any other allowed origins
+];
+
 app.use(cors({
-  origin: 'http://localhost:3001',
-  methods: 'GET,POST,PUT,DELETE',
-  allowedHeaders: 'Content-Type,Authorization',
-  credentials: true,
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
 }));
 
 app.post('/api/register', async (req, res) => {
@@ -157,7 +168,37 @@ app.get('/api/sync-payouts', authenticateJWT, async (req, res) => {
   }
 });
 
-app.post('/api/fiat-received', authenticateJWT, async (req, res) => {
+// Add this function to your authMiddleware.ts or create a new middleware file
+export const authorizeForFiatReceived = async (req, res, next) => {
+  const orderId = parseInt(req.body.order_id);
+  const userId = req.user.id;
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { order_id: orderId },
+      select: { type: true, customer_id: true, taker_customer_id: true }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const isAuthorized = (order.type === 0 && order.taker_customer_id === userId) || 
+                         (order.type === 1 && order.customer_id === userId);
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Unauthorized access' });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Authorization error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// In your server.ts, modify the fiat-received route
+app.post('/api/fiat-received', authenticateJWT, authorizeForFiatReceived, async (req, res) => {
   try {
     const { order_id } = req.body;
     await handleFiatReceived(parseInt(order_id));
