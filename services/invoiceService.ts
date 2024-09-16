@@ -367,56 +367,50 @@ async function postFullAmountInvoice(amount_msat: number, label: string, descrip
   }
 }
 
-async function handleFiatReceived(orderId: number) {
+async function handleFiatReceived(orderId: number | string) {
+  console.log(`Starting handleFiatReceived for order ID: ${orderId}`);
   try {
     await prisma.$transaction(async (prisma) => {
-      const updateResult = await prisma.payout.updateMany({
-        where: { order_id: orderId, status: 'fiat_received' },
-        data: { status: 'fiat_received' }
+      // Find the pending payout
+      const pendingPayout = await prisma.payout.findFirst({
+        where: { 
+          order_id: parseInt(orderId as string),
+          status: 'pending'
+        }
       });
+      console.log(`Pending payout for order ID ${orderId}:`, pendingPayout);
 
-      if (updateResult.count === 0) {
-        throw new Error('No corresponding payout found or update failed');
+      if (!pendingPayout) {
+        throw new Error(`No pending payout found for order ID: ${orderId}`);
       }
 
-      const payoutDetails = await prisma.payout.findMany({
-        where: { order_id: orderId },
-        select: { ln_invoice }
-      });
+      // Pay the invoice
+      console.log(`Attempting to pay invoice for order ID: ${orderId}`);
+      const paymentResult = await payInvoice(pendingPayout.ln_invoice);
+      console.log(`Payment result for order ID ${orderId}:`, paymentResult);
 
-      if (payoutDetails.length === 0) {
-        throw new Error('No payout details found for this order');
-      }
-
-      const payoutInvoice = payoutDetails[0].ln_invoice;
-
-      console.log("Payout LN Invoice:", payoutInvoice);
-
-      const paymentResult = await payInvoice(payoutInvoice);
       if (!paymentResult || paymentResult.status !== 'complete') {
         throw new Error('Failed to pay payout invoice');
       }
 
-      const holdInvoice = await prisma.invoice.findFirst({
-        where: { order_id: orderId, invoice_type: 'hold' },
-        select: { payment_hash: true }
+      // Update payout status to 'fiat_received'
+      console.log(`Updating payout status to 'fiat_received' for order ID: ${orderId}`);
+      const updateResult = await prisma.payout.update({
+        where: { payout_id: pendingPayout.payout_id },
+        data: { status: 'fiat_received' }
       });
-
-      if (holdInvoice) {
-        await settleHoldInvoice(holdInvoice.payment_hash);
-      }
-
-      console.log("Successfully paid payout invoice and settled hold invoice");
+      console.log(`Updated payout:`, updateResult);
     });
 
-    console.log("Fiat received and payout processed successfully.");
+    console.log(`Fiat received and payout processed successfully for order ID: ${orderId}`);
   } catch (error) {
-    console.error("Error processing fiat received:", error);
+    console.error(`Error processing fiat received for order ID ${orderId}:`, error);
     throw error;
   }
 }
 
 async function payInvoice(lnInvoice: string) {
+  console.log(`Attempting to pay invoice: ${lnInvoice}`);
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/pay`, { 
       method: 'POST',
@@ -429,17 +423,22 @@ async function payInvoice(lnInvoice: string) {
       agent: new https.Agent({ rejectUnauthorized: false })
     });
 
+    console.log(`Response status: ${response.status}`);
+    const responseBody = await response.text();
+    console.log(`Response body: ${responseBody}`);
+
     if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status}`);
+      throw new Error(`HTTP Error: ${response.status}. Body: ${responseBody}`);
     }
 
-    return await response.json();
+    const result = JSON.parse(responseBody);
+    console.log(`Payment result:`, result);
+    return result;
   } catch (error) {
     console.error('Failed to pay invoice:', error);
     throw error;
   }
 }
-
 async function updatePayoutStatus(orderId: number, status: string) {
   try {
     const result = await prisma.payout.updateMany({
@@ -571,35 +570,35 @@ async function handleChatroomTrigger(orderId: number) {
 
 const CHAT_APP_URL = 'http://localhost:3456';
 async function checkInvoicesAndCreateChatroom(orderId: number, userId: number) {
-  console.log(`[checkInvoicesAndCreateChatroom] Starting process for Order ID: ${orderId}`);
+  // console.log(`[checkInvoicesAndCreateChatroom] Starting process for Order ID: ${orderId}`);
   try {
     const allInvoices = await prisma.invoice.findMany({
       where: { order_id: orderId }
     });
-    console.log(`[checkInvoicesAndCreateChatroom] Found ${allInvoices.length} invoices for Order ID: ${orderId}`);
+    // console.log(`[checkInvoicesAndCreateChatroom] Found ${allInvoices.length} invoices for Order ID: ${orderId}`);
 
-    allInvoices.forEach((invoice, index) => {
-      console.log(`[checkInvoicesAndCreateChatroom] Invoice ${index + 1} details:`, {
-        invoice_id: invoice.invoice_id,
-        status: invoice.status,
-        invoice_type: invoice.invoice_type,
-        user_type: invoice.user_type,
-        amount_msat: invoice.amount_msat.toString()
-      });
-    });
+    // allInvoices.forEach((invoice, index) => {
+    //   console.log(`[checkInvoicesAndCreateChatroom] Invoice ${index + 1} details:`, {
+    //     invoice_id: invoice.invoice_id,
+    //     status: invoice.status,
+    //     invoice_type: invoice.invoice_type,
+    //     user_type: invoice.user_type,
+    //     amount_msat: invoice.amount_msat.toString()
+    //   });
+    // });
 
     const allInvoicesPaid = allInvoices.length === 3 && 
                             allInvoices.every(invoice => invoice.status === 'paid');
 
-    console.log(`[checkInvoicesAndCreateChatroom] All invoices paid for Order ID ${orderId}: ${allInvoicesPaid}`);
+    //console.log(`[checkInvoicesAndCreateChatroom] All invoices paid for Order ID ${orderId}: ${allInvoicesPaid}`);
 
     if (allInvoicesPaid) {
-      console.log(`[checkInvoicesAndCreateChatroom] Updating order ${orderId} status to chat_open`);
+       //console.log(`[checkInvoicesAndCreateChatroom] Updating order ${orderId} status to chat_open`);
       const updatedOrder = await prisma.order.update({
         where: { order_id: orderId },
         data: { status: 'chat_open' }
       });
-      console.log(`[checkInvoicesAndCreateChatroom] Order ${orderId} update result:`, updatedOrder);
+      // console.log(`[checkInvoicesAndCreateChatroom] Order ${orderId} update result:`, updatedOrder);
 
       const order = await prisma.order.findUnique({
         where: { order_id: orderId },
@@ -614,15 +613,15 @@ async function checkInvoicesAndCreateChatroom(orderId: number, userId: number) {
 
       const makeOfferUrl = `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
       const acceptOfferUrl = `${CHAT_APP_URL}/ui/chat/accept-offer?orderId=${orderId}`;
-      console.log(`[checkInvoicesAndCreateChatroom] Chatroom URLs created for Order ID: ${orderId}`);
+      // console.log(`[checkInvoicesAndCreateChatroom] Chatroom URLs created for Order ID: ${orderId}`);
 
       return { makeOfferUrl, acceptOfferUrl, userRole };
     } else {
-      console.log(`[checkInvoicesAndCreateChatroom] Not all invoices are paid for Order ID: ${orderId}. No chatroom created.`);
+      // console.log(`[checkInvoicesAndCreateChatroom] Not all invoices are paid for Order ID: ${orderId}. No chatroom created.`);
       return { makeOfferUrl: null, acceptOfferUrl: null, userRole: null };
     }
   } catch (error) {
-    console.error(`[checkInvoicesAndCreateChatroom] Error processing Order ID ${orderId}:`, error);
+    // console.error(`[checkInvoicesAndCreateChatroom] Error processing Order ID ${orderId}:`, error);
     throw error;
   }
 }
@@ -761,37 +760,40 @@ async function fullInvoiceLookup(paymentHash: string) {
   }
 }
 
-async function checkInvoicePayment(payment_hash: string) {
+export const checkInvoicePayment = async (paymentHash) => {
   try {
-    const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Rune': RUNE,
-      },
-      agent: new https.Agent({ rejectUnauthorized: false })
-    });
-
-    if (!response.ok) {
-      // Only log critical errors
-      if (response.status !== 404) {
-        console.error(`Critical error checking invoice payment: HTTP ${response.status}`);
+    console.log(`Checking payment status for hash: ${paymentHash}`);
+    const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, 
+      { payment_hash: paymentHash },
+      {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Rune': RUNE
+        },
+        httpsAgent: agent
       }
-      return false; // Assume unpaid for any error
-    }
+    );
 
-    const invoiceData = await response.json();
-    if (invoiceData.status === 'paid') {
-      console.log(`Invoice ${payment_hash} is paid.`);
+    console.log('Lightning node response:', response.data);
+
+    if (response.data.invoices && response.data.invoices.length > 0) {
+      const invoice = response.data.invoices[0];
+      const isPaid = invoice.status === 'paid' || invoice.paid === true;
+      console.log(`Invoice ${paymentHash} paid status: ${isPaid}`);
+      return isPaid;
+    } else {
+      console.log(`Invoice with payment hash ${paymentHash} not found on Lightning node`);
+      return false;
     }
-    return invoiceData.status === 'paid';
   } catch (error) {
-    // Only log unexpected errors
-    console.error('Unexpected error in checkInvoicePayment:', error.message);
-    return false; // Assume unpaid for any error
+    console.error(`Error checking invoice payment for ${paymentHash}:`, error.message);
+    if (error.response) {
+      console.error('Error response:', error.response.data);
+    }
+    return false;
   }
-}
-
+};
 
 
 

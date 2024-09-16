@@ -160,11 +160,10 @@ app.get('/api/sync-payouts', authenticateJWT, async (req, res) => {
 app.post('/api/fiat-received', authenticateJWT, async (req, res) => {
   try {
     const { order_id } = req.body;
-    await handleFiatReceived(order_id);
+    await handleFiatReceived(parseInt(order_id));
     res.status(200).json({ message: 'Fiat received processed successfully' });
   } catch (error) {
     console.error('Error processing fiat received:', error);
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Error processing fiat received', error: error.message });
   }
 });
