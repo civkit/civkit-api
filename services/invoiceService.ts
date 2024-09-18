@@ -568,7 +568,7 @@ async function handleChatroomTrigger(orderId: number) {
   return chatId;
 }
 
-const CHAT_APP_URL = 'http://localhost:3456';
+const CHAT_APP_URL = process.env.CHAT_APP_URL || 'http://localhost:3456';
 async function checkInvoicesAndCreateChatroom(orderId: number, userId: number) {
   // console.log(`[checkInvoicesAndCreateChatroom] Starting process for Order ID: ${orderId}`);
   try {

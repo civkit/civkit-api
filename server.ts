@@ -52,7 +52,8 @@ app.use(express.json());
 
 const allowedOrigins = [
   'http://localhost:3001',
-  'https://0714-112-134-238-18.ngrok-free.app', // Add your ngrok URL here
+  'https://0714-112-134-238-18.ngrok-free.app',
+  'https://real-meet-monster.ngrok-free.app'// Add your ngrok URL here
   // Add any other allowed origins
 ];
 
@@ -624,3 +625,22 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'Server is working' });
 });
 
+app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.orderId);
+    const latestChat = await prisma.chat.findFirst({
+      where: { order_id: orderId },
+      orderBy: { created_at: 'desc' },
+      select: { accept_offer_url: true }
+    });
+
+    if (!latestChat) {
+      return res.status(404).json({ message: 'No chat found for this order' });
+    }
+
+    res.json({ acceptOfferUrl: latestChat.accept_offer_url });
+  } catch (error) {
+    console.error('Error fetching latest chat details:', error);
+    res.status(500).json({ message: 'Error fetching latest chat details' });
+  }
+});
