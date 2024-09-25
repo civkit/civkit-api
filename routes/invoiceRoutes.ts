@@ -22,21 +22,37 @@ router.post('/lookup-hold-invoice', async (req: any, res: any) => {
   }
 });
 
-router.get('/:orderId', async (req: any, res: any) => {
+router.get('/:orderId', async (req: Request, res: Response) => {
   const { orderId } = req.params;
   const { type } = req.query; // Get the invoice type from query parameter
+
   try {
-    // @ts-expect-error TS(2304): Cannot find name 'query'.
-    const result = await query('SELECT * FROM invoices WHERE order_id = $1 AND invoice_type = $2', [orderId, type]);
-    if (result.rows.length === 0) {
+    // Use Prisma to query the invoice
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        order_id: parseInt(orderId, 10),
+        invoice_type: type as string, // Cast type to string
+      },
+    });
+
+    if (!invoice) {
       return res.status(404).json({ error: 'Invoice not found' });
     }
-    res.status(200).json(result.rows[0]);
+
+    // Convert BigInt fields to strings for JSON serialization
+    const serializedInvoice = JSON.parse(
+      JSON.stringify(invoice, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      )
+    );
+
+    res.status(200).json(serializedInvoice);
   } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching invoice:', err);
+    res.status(500).json({ error: 'An error occurred while fetching the invoice' });
   }
 });
+
 
 
 module.exports = router;

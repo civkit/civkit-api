@@ -1,0 +1,252 @@
+[33mcommit fde45b8a25e98901271b45d17f6370a7869e56c9[m[33m ([m[1;36mHEAD -> [m[1;32mprisma[m[33m)[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Tue Sep 10 13:25:54 2024 +0530
+
+     added take order function
+
+[33mcommit 6ce7dc6dd34496796a7143863f64ed2ed69bd4a2[m[33m ([m[1;31mcivkit/prisma[m[33m)[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Sep 9 18:51:48 2024 +0530
+
+    added take offer page now working on fe/be
+
+[33mcommit d447ec415956be9cd6a4a3f077942f1086e95848[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Sep 9 17:50:16 2024 +0530
+
+    first half working
+
+[33mcommit 0be66f0016c2370224f44360b7a12d89653eed6e[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Sep 9 17:11:29 2024 +0530
+
+    backend updates to fix code
+
+[33mcommit ee6f7a7267328fee387ddb3c8aa80831193e6dee[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Sep 9 15:01:46 2024 +0530
+
+    added hold invoice fixes
+
+[33mcommit 3c3321c7765336ca293f876e201ac7d4bce2eb79[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Thu Sep 5 15:57:55 2024 +0530
+
+    fixed multiple taker invoices being created issue
+
+[33mcommit e951d2ddec7fd53e40dd730faa8a2465f188fd36[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Wed Sep 4 18:16:20 2024 +0530
+
+    fixed redirect issue but still creating multiple invoices
+
+[33mcommit e7b9e98377531b45071cdf189423a8562c2e2ad3[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Wed Sep 4 18:02:22 2024 +0530
+
+    fixed redirect issue on taker invoice
+
+[33mcommit b8484214ec6d06d87a8e090445776cba85c81f6d[m
+Merge: 65b0cc4 076bbaa
+Author: Market Madi <155602595+MarketMadi@users.noreply.github.com>
+Date:   Tue Sep 3 14:25:33 2024 +0530
+
+    Merge pull request #22 from isaacknjama/auth-refactor
+    
+    Auth refactor
+
+[33mcommit 076bbaaa33c1edb7ef0db466c7a59d7ae79a395b[m
+Author: Isaack Njama <isaacknjama@proton.me>
+Date:   Wed Aug 28 09:28:36 2024 +0300
+
+    chore: project config
+
+[33mcommit 48ddf1b181d66790c5b2c9d3d2f6cf37ab4fcd3d[m
+Author: Isaack Njama <isaacknjama@proton.me>
+Date:   Wed Aug 28 09:26:44 2024 +0300
+
+    chore: perform migration on users
+
+[33mcommit 7db86a8e15f09b26ff7694585468a021ffcd143b[m
+Author: Isaack Njama <isaacknjama@proton.me>
+Date:   Wed Aug 28 09:24:29 2024 +0300
+
+    refactor: allow auth with secure password
+
+[33mcommit 9537be68ae732035f64f98be7feffc312551fd24[m
+Author: Isaack Njama <isaacknjama@proton.me>
+Date:   Wed Aug 28 09:23:02 2024 +0300
+
+    refactor: modify schema
+
+[33mcommit a4e08922cb19f537d742d51e7df1fb1611580e85[m
+Author: Isaack Njama <isaacknjama@proton.me>
+Date:   Fri Aug 23 12:06:41 2024 +0300
+
+    refactor: add event field
+
+[33mcommit f57117bed92d38227393d004a1ab0bd7d55824b8[m
+Author: Isaack Njama <isaacknjama@proton.me>
+Date:   Thu Aug 22 11:24:40 2024 +0300
+
+    refactor: register without password
+
+[33mcommit 65b0cc4908210cb50403dba4e48ae40a887bcb7f[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Fri Aug 16 14:52:19 2024 +0530
+
+     added prisma changes
+
+[33mcommit 063734e111b1081e2b337e5ccf3124988eec8788[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Fri Aug 16 13:23:10 2024 +0530
+
+    added prisma to order and payout service files
+
+[33mcommit 1231b3cd992b7214c59f0117ce2434b8eb5474d0[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Fri Jul 26 21:45:24 2024 +0530
+
+    added taker invoice to prisma
+
+[33mcommit abc9a26610949e53a8428a8e2fda0f6aa2f1b01d[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Fri Jul 26 20:22:07 2024 +0530
+
+    full invoice page loaidng
+
+[33mcommit 783102cb6460a0d6dd99532dfcce86aade9f01bb[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Thu Jul 25 19:16:00 2024 +0530
+
+    userService.ts changed to prisma
+
+[33mcommit f06868a1a3ce8733d8aa69ba43548352903dd25a[m[33m ([m[1;31mcivkit/main[m[33m, [m[1;32mmain[m[33m)[m
+Merge: defcc1d 4e78ff4
+Author: Market Madi <155602595+MarketMadi@users.noreply.github.com>
+Date:   Thu Jul 11 10:59:30 2024 +0530
+
+    Merge pull request #20 from civkit/typescript-migration
+    
+    Typescript migration
+
+[33mcommit 4e78ff48a7837201d795e35a78e9c3075c9594ad[m[33m ([m[1;31mcivkit/typescript-migration[m[33m, [m[1;32mtypescript-migration[m[33m)[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Thu Jul 11 10:54:59 2024 +0530
+
+    converted login to prisma
+
+[33mcommit 1bfe6b3a87163a0b7e444d0bd491a3366f46fe77[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Jul 8 19:22:09 2024 +0530
+
+    added ist to gitignore, checkpoijnt before attempting prisma and potentially breaking everything
+
+[33mcommit 26c86f3f7e089e37e365852df5e6909176c0ade4[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Jul 8 17:43:51 2024 +0530
+
+    typescript conversion complete, partly tested
+
+[33mcommit 549fb0ebfbcc915a4a2411963a99946006c702aa[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Jul 8 14:39:45 2024 +0530
+
+    [ts-migrate][.] Rename files from JS/JSX to TS/TSX
+    
+    Co-authored-by: ts-migrate <>
+
+[33mcommit 99be2c12b3a61ef60b95f0041098903133aaed03[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Jul 8 14:39:44 2024 +0530
+
+    [ts-migrate][.] Init tsconfig.json file
+    
+    Co-authored-by: ts-migrate <>
+
+[33mcommit defcc1d3c29cf521079ce502a50947cedbba4de6[m
+Merge: d544c98 901962a
+Author: Market Madi <155602595+MarketMadi@users.noreply.github.com>
+Date:   Sat Jul 6 12:21:49 2024 +0530
+
+    Merge pull request #11 from civkit/cleanup-comments
+    
+    added mainstay placeholder but need credentials to test
+
+[33mcommit 901962ac875a3ea66c9a792512227c2d46d50b90[m[33m ([m[1;31mcivkit/cleanup-comments[m[33m, [m[1;32mcleanup-comments[m[33m)[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Sat Jul 6 12:17:51 2024 +0530
+
+    resolving conflicts, gitignore up
+
+[33mcommit 854c55ef6e771d077b02e06f4d202f8dd8fa5967[m
+Author: Market Madi <155602595+MarketMadi@users.noreply.github.com>
+Date:   Sat Jul 6 11:51:26 2024 +0530
+
+    Delete node_modules directory
+
+[33mcommit d544c98c6319a1362560f53883f5cc5aa09f0e54[m
+Merge: e73d054 d9f967f
+Author: Market Madi <155602595+MarketMadi@users.noreply.github.com>
+Date:   Sat Jul 6 11:49:13 2024 +0530
+
+    Merge pull request #16 from ffaex/dockerize
+    
+    Dockerize
+
+[33mcommit d9f967fa757ad91ff416e67cfa457a150160b38b[m
+Author: Your Name <you@example.com>
+Date:   Fri Jul 5 13:19:12 2024 +0200
+
+    dockerize api, with postgress db
+
+[33mcommit 4428701cadb13cf1058160af460cd604f5bd0908[m
+Author: Your Name <you@example.com>
+Date:   Fri Jul 5 13:06:28 2024 +0200
+
+    remove node_modules folder
+
+[33mcommit e05fd30ff7fd7ed7c4e553affc2b38e219e7d5bb[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Fri Jul 5 01:31:29 2024 +0530
+
+    cleaned up syncinvoices so it used ACCEPTED across db and logic flow to match logs
+
+[33mcommit f4bac244fee344482a0112a4cd1789264620aceb[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Thu Jul 4 21:35:57 2024 +0530
+
+    fixing a few small issues with cap locks
+
+[33mcommit f6ab2f5988c7561bc8d60b9946d7b8e2601ee0ed[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Tue Jun 25 09:00:30 2024 +0530
+
+    added mainstay with protected route to code
+
+[33mcommit 3415384360506ef4315aa6f438c54665cf0b4c8d[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Jun 24 15:32:21 2024 +0530
+
+    added mainstay placeholder but need credentials to test
+
+[33mcommit e73d054a7b54454acfd922b56b6a9a1f555391a7[m
+Merge: d2d2138 21b3cf4
+Author: Market Madi <155602595+MarketMadi@users.noreply.github.com>
+Date:   Mon Jun 24 12:23:04 2024 +0530
+
+    Merge pull request #10 from civkit/cleanup-comments
+    
+    Cleanup comments
+
+[33mcommit 21b3cf4c33c66e4ee2d2a4b7c9d3b327335c19b0[m[33m ([m[1;31morigin/cleanup-comments[m[33m)[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Jun 24 12:03:05 2024 +0530
+
+    rmed tests as doing nothing lol
+
+[33mcommit e90f9803d23393208bbfca23ac249989f4261aeb[m
+Author: MarketMadi <market_madi1@protonmail.com>
+Date:   Mon Jun 24 11:52:05 2024 +0530
+
+    added comments and t

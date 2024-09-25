@@ -1,43 +1,53 @@
+import { PrismaClient } from '@prisma/client';
 import { config } from 'dotenv';
+
 config();
 
-async function createPayout(order_id: any, ln_invoice: any, status = 'pending') {
-    const db = await import('../config/db.js'); 
+const prisma = new PrismaClient();
 
-    // Validate order_id, check if it exists and is eligible for payout
-    const order = await db.query('SELECT * FROM orders WHERE order_id = $1', [order_id]);
-    if (order.rows.length === 0) {
-        throw new Error('Order does not exist or is not eligible for payout.');
+async function createPayout(order_id: number, ln_invoice: string, status = 'pending') {
+    try {
+        // Validate order_id, check if it exists and is eligible for payout
+        const order = await prisma.order.findUnique({
+            where: { order_id: order_id }
+        });
+
+        if (!order) {
+            throw new Error('Order does not exist or is not eligible for payout.');
+        }
+
+        // Insert the payout information into the payouts table
+        const payout = await prisma.payout.create({
+            data: {
+                order_id: order_id,
+                ln_invoice: ln_invoice,
+                status: status
+            }
+        });
+
+        return payout;
+    } catch (error) {
+        throw error;
     }
-
-    // Insert the payout information into the payouts table
-    const result = await db.query('INSERT INTO payouts (order_id, ln_invoice, status) VALUES ($1, $2, $3) RETURNING *', [order_id, ln_invoice, status]);
-    return result.rows[0];
 }
 
-
-async function retrievePayoutInvoice(orderId: any) {
-    const db = await import('../config/db.js');  
-
+async function retrievePayoutInvoice(orderId: number) {
     try {
         // Retrieve the payout invoice from the database based on the order ID
-        const result = await db.query('SELECT ln_invoice FROM payouts WHERE order_id = $1', [orderId]);
+        const payout = await prisma.payout.findFirst({
+            where: { order_id: orderId },
+            select: { ln_invoice: true }
+        });
 
         // Check if a payout invoice exists for the order ID
-        if (result.rows.length === 0) {
+        if (!payout) {
             throw new Error('No payout invoice found for this order ID');
         }
 
-        // Extract the Lightning invoice from the database result
-        // @ts-expect-error TS(2339): Property 'ln_invoice' does not exist on type 'any[... Remove this comment to see the full error message
-        const ln_invoice = result.rows[0].ln_invoice;
-        
-        return ln_invoice;
+        return payout.ln_invoice;
     } catch (error) {
         throw error;
     }
 }
 
 export { createPayout, retrievePayoutInvoice };
-
-

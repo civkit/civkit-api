@@ -9,6 +9,9 @@ import {
   syncPayoutsWithNode,
   handleFiatReceived,
   settleHoldInvoicesByOrderIdService,
+  fullInvoiceLookup,
+  checkInvoicesAndCreateChatroom,
+  postFullAmountInvoice
 } from './services/invoiceService.js';
 import { registerUser, authenticateUser,   pollAndCompleteRegistration } from './services/userService.js';
 import orderRoutes from './routes/orderRoutes.js';
@@ -19,22 +22,52 @@ import { checkAndCreateChatroom, updateAcceptOfferUrl } from './services/chatSer
 import { query, pool } from './config/db.js';
 import dotenv from 'dotenv'
 import submitToMainstayRoutes from './routes/submitToMainstay.js';
-
+import { PrismaClient, Prisma } from '@prisma/client';
+import crypto from 'crypto';
+import { generateInvoiceLabel } from './utils/invoiceUtils.js';
+import axios from 'axios';
+import https from 'node:https';
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const prisma = new PrismaClient();
+const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
+const RUNE = process.env.RUNE;
+
+console.log('LIGHTNING_NODE_API_URL:', LIGHTNING_NODE_API_URL);
+console.log('RUNE:', RUNE);
+
+if (!LIGHTNING_NODE_API_URL || !RUNE) {
+  console.error('Missing required environment variables. Please check your .env file.');
+  process.exit(1);
+}
+
+const agent = new https.Agent({
+  rejectUnauthorized: false
+});
+
 app.use(express.json());
 
+const allowedOrigins = [
+  'http://localhost:3001',
+  'https://0714-112-134-238-18.ngrok-free.app',
+  'https://real-meet-monster.ngrok-free.app'// Add your ngrok URL here
+  // Add any other allowed origins
+];
+
 app.use(cors({
-  origin: 'http://localhost:3001',
-  methods: 'GET,POST,PUT,DELETE',
-  allowedHeaders: 'Content-Type,Authorization',
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
 }));
-
-
-
 
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
@@ -46,10 +79,11 @@ app.post('/api/register', async (req, res) => {
       user: {
         id: user.id,
         username: user.username,
+        password: user.password,
         created_at: user.created_at,
-        invoice: user.invoice
+        invoice: user.invoice,
       },
-      invoice: user.invoice  // Display the invoice to regidster
+      invoice: user.invoice  // Display the invoice to register
     });
   } catch (error) {
     // @ts-expect-error TS(2571): Object is of type 'unknown'.
@@ -71,6 +105,7 @@ setInterval(async () => {
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+
     const user = await authenticateUser(username, password);
     const token = generateToken(user);
     res.json({ token });
@@ -81,23 +116,33 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
+  console.log('Received request at /api/holdinvoice');
+  console.log('Request body:', req.body);
   try {
     const { amount_msat, label, description } = req.body;
+    console.log('Extracted values:', { amount_msat, label, description });
     const result = await postHoldinvoice(amount_msat, label, description);
+    console.log('postHoldinvoice result:', result);
     res.json(result);
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
+    console.error('Error in /api/holdinvoice:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post('/api/holdinvoicelookup', authenticateJWT, async (req, res) => {
+  const { payment_hash } = req.body;
+
+  if (!payment_hash) {
+    return res.status(400).json({ error: 'Payment hash is required' });
+  }
+
   try {
-    const result = await holdInvoiceLookup(req.body.payment_hash);
+    const result = await holdInvoiceLookup(payment_hash);
     res.json(result);
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: error.message });
+    console.error('Error in /api/holdinvoicelookup:', error);
+    res.status(500).json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -110,7 +155,6 @@ app.post('/api/sync-invoices', authenticateJWT, async (req, res) => {
     res.status(200).json({ message: 'Invoices synchronized successfully' });
   } catch (error) {
     console.error('Failed to sync invoices:', error);
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Failed to synchronize invoices', error: error.message });
   }
 });
@@ -125,14 +169,43 @@ app.get('/api/sync-payouts', authenticateJWT, async (req, res) => {
   }
 });
 
-app.post('/api/fiat-received', authenticateJWT, async (req, res) => {
+// Add this function to your authMiddleware.ts or create a new middleware file
+export const authorizeForFiatReceived = async (req, res, next) => {
+  const orderId = parseInt(req.body.order_id);
+  const userId = req.user.id;
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { order_id: orderId },
+      select: { type: true, customer_id: true, taker_customer_id: true }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const isAuthorized = (order.type === 0 && order.taker_customer_id === userId) || 
+                         (order.type === 1 && order.customer_id === userId);
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Unauthorized access' });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Authorization error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// In your server.ts, modify the fiat-received route
+app.post('/api/fiat-received', authenticateJWT, authorizeForFiatReceived, async (req, res) => {
   try {
     const { order_id } = req.body;
-    await handleFiatReceived(order_id);
+    await handleFiatReceived(parseInt(order_id));
     res.status(200).json({ message: 'Fiat received processed successfully' });
   } catch (error) {
     console.error('Error processing fiat received:', error);
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Error processing fiat received', error: error.message });
   }
 });
@@ -167,33 +240,17 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
 
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
   const { orderId } = req.body;
-  // @ts-expect-error TS(2339): Property 'user' does not exist on type 'Request<{}... Remove this comment to see the full error message
-  const userId = req.user.id; // Assuming `req.user` contains the authenticated user's details
-
+  const userId = req.user.id;
   try {
-    // Fetch the order details
-    const orderResult = await query('SELECT * FROM orders WHERE order_id = $1', [orderId]);
-    if (orderResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    const order = orderResult.rows[0];
-    console.log('Order details:', order);
-    console.log('User ID:', userId);
-
-    // Check if the user is the maker or taker of the order
-    // @ts-expect-error TS(2339): Property 'customer_id' does not exist on type 'any... Remove this comment to see the full error message
-    if (order.customer_id !== userId && order.taker_customer_id !== userId) {
-      return res.status(403).json({ message: 'You are not authorized to access this chatroom' });
-    }
-
-    // Proceed to create or check chatroom
-    // @ts-expect-error TS(2339): Property 'makeOfferUrl' does not exist on type '{ ... Remove this comment to see the full error message
-    const { makeOfferUrl, acceptOfferUrl } = await checkAndCreateChatroom(orderId);
-    res.status(200).json({ makeChatUrl: makeOfferUrl, acceptChatUrl: acceptOfferUrl });
+    const result = await checkInvoicesAndCreateChatroom(orderId, userId);
+    res.status(200).json(result);
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ message: 'Failed to create chatroom', error: error.message });
+    if (error.message === 'User is neither maker nor taker of this order') {
+      res.status(403).json({ error: 'Unauthorized access to this order' });
+    } else {
+      console.error('[/api/check-and-create-chatroom] Error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 });
 
@@ -215,27 +272,34 @@ app.use('/api/settle', settleRoutes);
 // Get all orders
 app.get('/api/orders', authenticateJWT, async (req, res) => {
   try {
-    // @ts-expect-error TS(2554): Expected 2 arguments, but got 1.
-    const result = await query('SELECT * FROM orders');
-    res.status(200).json(result.rows);
-  } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    const orders = await prisma.order.findMany();
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    res.status(500).json({ error: 'Failed to fetch orders' });
   }
 });
 
 //Get order by ID
+
+
 app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
-    const result = await query('SELECT * FROM orders WHERE order_id = $1', [orderId]);
-    if (result.rows.length === 0) {
+    const order = await prisma.order.findUnique({
+      where: {
+        order_id: parseInt(orderId)
+      }
+    });
+
+    if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    res.status(200).json(result.rows[0]);
+
+    res.status(200).json(order);
   } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching order:', err);
+    res.status(500).json({ error: 'An error occurred while fetching the order' });
   }
 });
 
@@ -243,61 +307,101 @@ app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
 app.get('/api/invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
-    const result = await query('SELECT * FROM invoices WHERE order_id = $1', [orderId]);
-    if (result.rows.length === 0) {
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        order_id: parseInt(orderId)
+      }
+    });
+
+    if (!invoices || invoices.length === 0) {
       return res.status(404).json({ error: 'Invoice not found' });
     }
-    res.status(200).json(result.rows[0]);
+
+    // Convert BigInt fields to strings
+    const serializedInvoices = invoices.map(invoice => ({
+      ...invoice,
+      amount_msat: invoice.amount_msat.toString(),
+      amount_received_msat: invoice.amount_received_msat ? invoice.amount_received_msat.toString() : null,
+      created_at: invoice.created_at.toISOString(),
+      expires_at: invoice.expires_at.toISOString(),
+      paid_at: invoice.paid_at ? invoice.paid_at.toISOString() : null
+    }));
+
+    res.status(200).json(serializedInvoices);
   } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching invoice:', err);
+    res.status(500).json({ error: 'An error occurred while fetching the invoice' });
   }
 });
 
 app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
-    const result = await query('SELECT * FROM invoices WHERE order_id = $1 AND user_type = $2', [orderId, 'taker']);
-    if (result.rows.length === 0) {
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        order_id: parseInt(orderId),
+        user_type: 'taker'
+      }
+    });
+
+    if (invoices.length === 0) {
       return res.status(404).json({ error: 'Taker invoice not found' });
     }
-    res.status(200).json(result.rows);
+
+    // Convert BigInt fields to strings for JSON serialization
+    const serializedInvoices = invoices.map(invoice => ({
+      ...invoice,
+      amount_msat: invoice.amount_msat.toString(),
+      amount_received_msat: invoice.amount_received_msat ? invoice.amount_received_msat.toString() : null,
+      created_at: invoice.created_at.toISOString(),
+      expires_at: invoice.expires_at.toISOString(),
+      paid_at: invoice.paid_at ? invoice.paid_at.toISOString() : null
+    }));
+
+    res.status(200).json(serializedInvoices);
   } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching taker invoice:', err);
+    res.status(500).json({ error: 'An error occurred while fetching the taker invoice' });
   }
 });
 
 app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
   const { orderId } = req.params;
   try {
-    const result = await query('SELECT * FROM invoices WHERE order_id = $1 AND invoice_type = $2', [parseInt(orderId, 10), 'full']);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Full invoice not found' });
+    let invoice = await prisma.invoice.findFirst({
+      where: { order_id: parseInt(orderId), invoice_type: 'full' }
+    });
+
+    if (!invoice) {
+      const order = await prisma.order.findUnique({ where: { order_id: parseInt(orderId) } });
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      const label = `full_invoice_${orderId}_${Date.now()}`;
+      const description = `Full invoice for order ${orderId}`;
+      const invoiceData = await postFullAmountInvoice(order.amount_msat, label, description, order.order_id, order.type.toString());
+
+      invoice = await prisma.invoice.create({
+        data: {
+          order_id: parseInt(orderId),
+          bolt11: invoiceData.bolt11,
+          amount_msat: BigInt(order.amount_msat),
+          description,
+          status: 'unpaid',
+          created_at: new Date(),
+          expires_at: new Date(invoiceData.expires_at * 1000),
+          payment_hash: invoiceData.payment_hash,
+          invoice_type: 'full',
+          user_type: 'taker'
+        }
+      });
     }
-    res.status(200).json(result.rows[0]);
-  } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
+
+    res.json({ invoice: { ...invoice, amount_msat: invoice.amount_msat.toString() } });
+  } catch (error) {
+    console.error('Error fetching or creating full invoice:', error);
+    res.status(500).json({ error: 'Failed to fetch or create full invoice' });
   }
 });
-
-// endpoint to lookup full invoice by payment hash
-app.post('/api/fullinvoicelookup', authenticateJWT, async (req, res) => {
-  const { payment_hash } = req.body;
-  try {
-    const result = await query('SELECT * FROM invoices WHERE payment_hash = $1 AND invoice_type = $2', [payment_hash, 'full']);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Full invoice not found' });
-    }
-    res.status(200).json(result.rows[0]);
-  } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
 
 // Call this function periodically
 setInterval(async () => {
@@ -316,15 +420,20 @@ app.post('/api/get-invoice', async (req, res) => {
   }
 
   try {
-    const query = 'SELECT invoice, payment_hash, status FROM users WHERE username = $1';
-    const values = [username];
-    const { rows } = await pool.query(query, values);
+    const user = await prisma.user.findUnique({
+      where: { username },
+      select: {
+        invoice: true,
+        payment_hash: true,
+        status: true,
+      },
+    });
 
-    if (rows.length === 0) {
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const { invoice, payment_hash, status } = rows[0];
+    const { invoice, payment_hash, status } = user;
     res.status(200).json({ invoice, payment_hash, status });
   } catch (error) {
     console.error('Error fetching invoice:', error);
@@ -333,3 +442,205 @@ app.post('/api/get-invoice', async (req, res) => {
 });
 
 app.use('/api', submitToMainstayRoutes);
+
+console.log('Registering /api/taker-invoice/:orderId route');
+
+app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
+  console.log('Received request for taker invoice:', req.params.orderId);
+  const orderId = parseInt(req.params.orderId);
+  const takerId = req.user.id;
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { order_id: orderId },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const holdInvoice = await createTakerHoldInvoice(orderId, order.amount_msat, `Taker hold invoice for Order ${orderId}`);
+
+    const updatedOrder = await prisma.order.update({
+      where: { order_id: orderId },
+      data: { 
+        taker_customer_id: takerId,
+        status: 'taker_found'
+      },
+    });
+
+    res.status(200).json(serializeBigInt({
+      message: 'Taker hold invoice created successfully',
+      order: updatedOrder,
+      holdInvoice,
+    }));
+  } catch (error) {
+    console.error('[API] Error creating taker hold invoice:', error);
+    res.status(500).json({ error: 'Failed to create taker hold invoice', details: error.message });
+  }
+});
+
+export async function createTakerHoldInvoice(orderId: number, amount_msat: number, description: string) {
+  console.log(` [createTakerHoldInvoice] Starting for orderId: ${orderId}`);
+
+  // Add this line to calculate 5%
+  const holdAmount = Math.floor(amount_msat * 0.05);
+
+  return await prisma.$transaction(async (prisma) => {
+    // Check for existing invoice within the transaction
+    const existingInvoice = await prisma.invoice.findFirst({
+      where: {
+        order_id: orderId,
+        user_type: 'taker',
+        invoice_type: 'hold',
+      }
+    });
+
+    if (existingInvoice) {
+      console.log(`[createTakerHoldInvoice] Existing hold invoice found for order ${orderId}`);
+      return existingInvoice;
+    }
+
+    console.log(`[createTakerHoldInvoice] No existing invoice found. Creating new invoice for order ${orderId}`);
+
+    const timestamp = Date.now();
+    const label = `taker_hold_${orderId}_${timestamp}`;
+
+    // Now create the hold invoice on the Lightning node
+    try {
+      const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
+        amount_msat: holdAmount, // Use holdAmount instead of amount_msat
+        label,
+        description,
+        cltv: 144,
+      }, {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Rune': RUNE
+        },
+        httpsAgent: agent
+      });
+
+      console.log(`[createTakerHoldInvoice] Lightning node response:`, response.data);
+
+      if (!response.data || !response.data.bolt11 || !response.data.payment_hash) {
+        throw new Error('Invalid response from Lightning Node API: ' + JSON.stringify(response.data));
+      }
+
+      // Create the invoice in the database with the real data
+      const newInvoice = await prisma.invoice.create({
+        data: {
+          order_id: orderId,
+          bolt11: response.data.bolt11,
+          amount_msat: BigInt(amount_msat),
+          description: description,
+          status: 'unpaid',
+          created_at: new Date(),
+          expires_at: new Date(response.data.expires_at * 1000),
+          payment_hash: response.data.payment_hash,
+          invoice_type: 'hold',
+          user_type: 'taker',
+        },
+      });
+
+      console.log(`[createTakerHoldInvoice] Invoice created in database:`, {
+        invoice_id: newInvoice.invoice_id,
+        payment_hash: newInvoice.payment_hash,
+      });
+
+      return newInvoice;
+    } catch (error) {
+      console.error(`[createTakerHoldInvoice] Error creating taker hold invoice:`, error);
+      throw error;
+    }
+  }, {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable
+  });
+}
+
+function serializeBigInt(data: any): any {
+  if (typeof data === 'bigint') {
+    return data.toString();
+  } else if (Array.isArray(data)) {
+    return data.map(serializeBigInt);
+  } else if (typeof data === 'object' && data !== null) {
+    return Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [key, serializeBigInt(value)])
+    );
+  }
+  return data;
+}
+
+app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const dbInvoice = await prisma.invoice.findFirst({
+      where: { 
+        order_id: parseInt(orderId), 
+        invoice_type: 'full' 
+      }
+    });
+
+    if (!dbInvoice) {
+      return res.status(404).json({ error: 'Full invoice not found' });
+    }
+
+    const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {}, {
+      headers: { 
+        'Accept': 'application/json', 
+        'Rune': RUNE
+      },
+      httpsAgent: agent
+    });
+
+    const { invoices } = response.data;
+
+    const nodeInvoice = invoices.find(inv => inv.payment_hash === dbInvoice.payment_hash);
+
+    if (!nodeInvoice) {
+      return res.status(404).json({ error: 'Invoice not found on Lightning node' });
+    }
+
+    console.log(`Full invoice status for order ${orderId}: ${nodeInvoice.status}`);
+
+    if (nodeInvoice.status === 'paid' && dbInvoice.status !== 'paid') {
+      await prisma.invoice.updateMany({
+        where: { 
+          order_id: parseInt(orderId),
+          invoice_type: 'full'
+        },
+        data: { status: 'paid' }
+      });
+      console.log(`Updated database status to paid for order ${orderId}`);
+    }
+
+    res.json({ status: nodeInvoice.status });
+  } catch (error) {
+    console.error('Error checking full invoice:', error);
+    res.status(500).json({ error: 'Failed to check full invoice' });
+  }
+});
+
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'Server is working' });
+});
+
+app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.orderId);
+    const latestChat = await prisma.chat.findFirst({
+      where: { order_id: orderId },
+      orderBy: { created_at: 'desc' },
+      select: { accept_offer_url: true }
+    });
+
+    if (!latestChat) {
+      return res.status(404).json({ message: 'No chat found for this order' });
+    }
+
+    res.json({ acceptOfferUrl: latestChat.accept_offer_url });
+  } catch (error) {
+    console.error('Error fetching latest chat details:', error);
+    res.status(500).json({ message: 'Error fetching latest chat details' });
+  }
+});
