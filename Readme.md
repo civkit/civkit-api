@@ -278,3 +278,36 @@ Everythhing after this will require a lightning node.
 
 
 This setup allows you to easily test various functionalities of your API using curl commands. Replace `<maker_token>` and `<taker_token>` with the tokens generated for the maker and taker users, respectively.
+
+
+These are the endpoints being consumed by FE:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/register | Register a new user |
+| POST | /api/login | Authenticate a user |
+| GET | /api/orders | Fetch all orders |
+| POST | /api/orders/take | Take an existing order |
+| POST | /api/check-and-create-chatroom | Check and create a chatroom for an order |
+| GET | /api/orders/:orderId | Fetch details of a specific order |
+| GET | /api/invoice/:orderId | Fetch invoice for a specific order |
+| POST | /api/holdinvoicelookup | Check the status of a hold invoice |
+| PUT | /api/orders/:orderId | Update a specific order |
+| POST | /api/get-invoice | Get or create an invoice |
+| POST | /api/taker-invoice/${orderId} | Create a taker invoice for an order |
+| POST | /api/payouts | Submit a payout |
+| POST | /api/taker-full-invoice/${orderId} | Create a full invoice for a taker |
+| GET | /api/full-invoice/${orderId} | Fetch full invoice for an order |
+| GET | /api/order/${orderId}/latest-chat-details | Fetch latest chat details for an order |
+| GET | /api/currencies.json | Fetch available currencies |
+
+
+Endpoints not consumed:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/check-accepted-invoices | Check and update accepted invoices |
+| POST | /api/update-accept-offer-url | Update accept-offer URL |
+| POST | /api/settle/settle-hold-invoices | Settle hold invoices for an order |
+| POST | /api/orders/settle-holdinvoices-by-order | Settle hold invoices by order ID |
+| POST | /api/submitToMainstay | Submit data to Mainstay |
