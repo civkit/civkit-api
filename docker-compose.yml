@@ -1,31 +1,10 @@
 version: '3.8'
-
 services:
-  db:
-    image: postgres:16-alpine
-    restart: always
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-    ports:
-      - '5432:5432'
-    volumes:
-      - db:/var/lib/postgresql/data
-
   api:
     build: .
-    restart: always
-    ports:
-      - '3000:3000'
+    network_mode: "host"
+    env_file:
+      - .env
     environment:
-      - DB_HOST=db
-      - DB_USER=postgres
-      - DATABASE_PASSWORD=postgres
-      - DB_NAME=holdinvoices
-      - DB_PORT=5432
-    depends_on:
-      - db
-
-volumes:
-  db:
-    driver: local
+      - DATABASE_URL=${DATABASE_URL}
+      - LIGHTNING_NODE_API_URL=${LIGHTNING_NODE_API_URL}

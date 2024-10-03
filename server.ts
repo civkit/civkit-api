@@ -628,17 +628,52 @@ app.get('/api/test', (req, res) => {
 app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, res) => {
   try {
     const orderId = parseInt(req.params.orderId);
+    const userId = req.user.id;
+
+    console.log(`Fetching chat details for order ${orderId}, user ${userId}`);
+
+    const order = await prisma.order.findUnique({
+      where: { order_id: orderId },
+      select: { customer_id: true, taker_customer_id: true, type: true }
+    });
+
+    if (!order) {
+      console.log(`Order ${orderId} not found`);
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    const isMaker = order.customer_id === userId;
+    const isTaker = order.taker_customer_id === userId;
+
+    if (!isMaker && !isTaker) {
+      console.log(`User ${userId} is neither maker nor taker of order ${orderId}`);
+      return res.status(403).json({ message: 'Unauthorized access to this order' });
+    }
+
     const latestChat = await prisma.chat.findFirst({
       where: { order_id: orderId },
       orderBy: { created_at: 'desc' },
-      select: { accept_offer_url: true }
+      select: { 
+        chatroom_url: true,
+        accept_offer_url: true 
+      }
     });
 
     if (!latestChat) {
+      console.log(`No chat found for order ${orderId}`);
       return res.status(404).json({ message: 'No chat found for this order' });
     }
 
-    res.json({ acceptOfferUrl: latestChat.accept_offer_url });
+    console.log(`Chat details found for order ${orderId}:`, latestChat);
+
+    let chatUrl;
+    if (isMaker) {
+      chatUrl = latestChat.chatroom_url;
+    } else if (isTaker) {
+      chatUrl = latestChat.accept_offer_url;
+    }
+
+    res.json({ chatUrl });
   } catch (error) {
     console.error('Error fetching latest chat details:', error);
     res.status(500).json({ message: 'Error fetching latest chat details' });
