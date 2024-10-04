@@ -38,15 +38,14 @@ export async function checkAndCreateChatroom(orderId: number) {
     }
 
     // Create chatroom URLs
-    const chatroomUrl = `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
-    const acceptOfferUrl = `${CHAT_APP_URL}/ui/chat/accept-offer?orderId=${orderId}`;
+    const makeOfferUrl = `${CHAT_APP_URL}/ui/chat/make-offer?orderId=${orderId}`;
 
     // Create chat in database
     const newChat = await prisma.chat.create({
       data: {
         order_id: orderId,
-        chatroom_url: chatroomUrl,
-        accept_offer_url: acceptOfferUrl,
+        chatroom_url: makeOfferUrl,
+        accept_offer_url: null, // This will be updated later
         status: 'active'
       }
     });
@@ -61,7 +60,7 @@ export async function checkAndCreateChatroom(orderId: number) {
 
     console.log(`[checkAndCreateChatroom] Order ${orderId} status updated to chat_open`, updatedOrder);
 
-    return { chatroomUrl, acceptOfferUrl };
+    return { makeOfferUrl };
   } catch (error) {
     console.error(`[checkAndCreateChatroom] Error processing Order ID ${orderId}:`, error);
     throw error;
