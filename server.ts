@@ -51,7 +51,7 @@ const agent = new https.Agent({
 app.use(express.json());
 
 const allowedOrigins = [
-'*'
+'https://*.civkit.africa'
 ];
 
 app.use(cors({
