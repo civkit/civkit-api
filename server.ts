@@ -51,10 +51,7 @@ const agent = new https.Agent({
 app.use(express.json());
 
 const allowedOrigins = [
-  'http://localhost:3001',
-  'https://0714-112-134-238-18.ngrok-free.app',
-  'https://real-meet-monster.ngrok-free.app'// Add your ngrok URL here
-  // Add any other allowed origins
+'*'
 ];
 
 app.use(cors({
