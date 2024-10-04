@@ -737,3 +737,23 @@ app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, 
     res.status(500).json({ message: 'Error fetching latest chat details' });
   }
 });
+
+app.get('/api/latest-accept-chat-url/:orderId', authenticateJWT, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.orderId);
+    const latestChat = await prisma.chat.findFirst({
+      where: { order_id: orderId },
+      orderBy: { created_at: 'desc' },
+      select: { accept_offer_url: true }
+    });
+
+    if (!latestChat || !latestChat.accept_offer_url) {
+      return res.status(404).json({ message: 'No accept offer URL found for this order' });
+    }
+
+    res.json({ url: latestChat.accept_offer_url });
+  } catch (error) {
+    console.error('Error fetching latest accept offer URL:', error);
+    res.status(500).json({ message: 'Error fetching latest accept offer URL' });
+  }
+});
