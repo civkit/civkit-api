@@ -2,6 +2,13 @@
 
 This README provides instructions for setting up the Civkit Africa application, including the database, frontend, API, chat application, and Nginx configuration.
 
+## Prerequisites
+- c-lightning
+- daywalker hold invoice plugin
+- nostr relay. nostr-rs-relay preferred
+- a domain
+- a server to deploy on
+
 ## Database Setup (Prisma)
 
 1. Install Prisma CLI:
