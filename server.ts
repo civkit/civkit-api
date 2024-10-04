@@ -683,10 +683,12 @@ app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
   }
 });
 
-app.get('/api/order/:orderId/chat-url', authenticateJWT, async (req, res) => {
+app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, res) => {
   try {
     const orderId = parseInt(req.params.orderId);
     const userId = req.user.id;
+
+    console.log(`Fetching chat details for order ${orderId}, user ${userId}`);
 
     const order = await prisma.order.findUnique({
       where: { order_id: orderId },
@@ -694,26 +696,44 @@ app.get('/api/order/:orderId/chat-url', authenticateJWT, async (req, res) => {
     });
 
     if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+      console.log(`Order ${orderId} not found`);
+      return res.status(404).json({ message: 'Order not found' });
     }
 
-    if (order.customer_id !== userId && order.taker_customer_id !== userId) {
-      return res.status(403).json({ error: 'Unauthorized access to this order' });
+    const isMaker = order.customer_id === userId;
+    const isTaker = order.taker_customer_id === userId;
+
+    if (!isMaker && !isTaker) {
+      console.log(`User ${userId} is neither maker nor taker of order ${orderId}`);
+      return res.status(403).json({ message: 'Unauthorized access to this order' });
     }
 
-    const chat = await prisma.chat.findFirst({
-      where: { order_id: orderId }
+    const latestChat = await prisma.chat.findFirst({
+      where: { order_id: orderId },
+      orderBy: { created_at: 'desc' },
+      select: { 
+        chatroom_url: true,
+        accept_offer_url: true 
+      }
     });
 
-    if (!chat) {
-      return res.status(404).json({ error: 'Chat not found for this order' });
+    if (!latestChat) {
+      console.log(`No chat found for order ${orderId}`);
+      return res.status(404).json({ message: 'No chat found for this order' });
     }
 
-    const chatUrl = order.customer_id === userId ? chat.chatroom_url : chat.accept_offer_url;
+    console.log(`Chat details found for order ${orderId}:`, latestChat);
 
-    res.status(200).json({ chatUrl });
+    let chatUrl;
+    if (isMaker) {
+      chatUrl = latestChat.chatroom_url;
+    } else if (isTaker) {
+      chatUrl = latestChat.accept_offer_url;
+    }
+
+    res.json({ chatUrl });
   } catch (error) {
-    console.error('[/api/order/:orderId/chat-url] Error:', error);
-    res.status(500).json({ error: 'Failed to fetch chat URL' });
+    console.error('Error fetching latest chat details:', error);
+    res.status(500).json({ message: 'Error fetching latest chat details' });
   }
 });
