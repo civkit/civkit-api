@@ -731,7 +731,7 @@ app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, 
       chatUrl = latestChat.accept_offer_url;
     }
 
-    res.json({ chatUrl });
+    res.json({ chatUrl, isMaker, isTaker });
   } catch (error) {
     console.error('Error fetching latest chat details:', error);
     res.status(500).json({ message: 'Error fetching latest chat details' });
