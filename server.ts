@@ -50,13 +50,11 @@ const agent = new https.Agent({
 
 app.use(express.json());
 
-const allowedOrigins = [
-'https://*.civkit.africa'
-];
+const allowedOrigins = ['*'];
 
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin) return callback(null, true);
+    if (!origin || allowedOrigins.includes('*')) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
       var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
       return callback(new Error(msg), false);
