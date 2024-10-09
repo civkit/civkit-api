@@ -1,20 +1,19 @@
 import WebSocket from 'ws';
-import { getPublicKey, getEventHash } from 'nostr-tools';
+import { getPublicKey, getEventHash, finalizeEvent } from 'nostr-tools/pure';
 
 const relays = ['wss://civkit.africa', 'wss://relay.damus.io'];
 
 function createEvent(privateKey: string, content: string) {
   const pubkey = getPublicKey(privateKey);
-  const event: any = {
-    kind: 1,
-    pubkey,
+  const eventTemplate = {
+    kind: 1505,
     created_at: Math.floor(Date.now() / 1000),
     tags: [['t', 'civkit'], ['t', 'orderbook']],
-    content
+    content,
+    pubkey
   };
-  event.id = getEventHash(event);
-  // We're not signing the event here
-  return event;
+
+  return finalizeEvent(eventTemplate, privateKey);
 }
 
 export async function announceCivKitNode() {
