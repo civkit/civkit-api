@@ -27,6 +27,8 @@ import crypto from 'crypto';
 import { generateInvoiceLabel } from './utils/invoiceUtils.js';
 import axios from 'axios';
 import https from 'node:https';
+import { announceCivKitNode } from './utils/nostrAnnouncements.js';
+
 dotenv.config();
 
 const app = express();
@@ -217,11 +219,28 @@ app.post('/api/settle-holdinvoices-by-order', authenticateJWT, async (req, res) 
 });
 
 // Initialize NDK and create identity
-initializeNDK().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-});
+async function startServer() {
+  try {
+    app.listen(PORT,  () => {
+      console.log(`Server running on port ${PORT}`);
+      announceCivKitNode()
+        .then(() => console.log('CivKit node announced successfully'))
+        .catch(error => console.error('Failed to announce CivKit node:', error));
+    });
+
+    // Announce every 24 hours
+    setInterval(() => {
+      announceCivKitNode()
+        .then(() => console.log('CivKit node announced successfully'))
+        .catch(error => console.error('Failed to announce CivKit node:', error));
+    }, 24 * 60 * 60 * 1000);
+
+  } catch (error) {
+    console.error('Failed to start server:', error);
+  }
+}
+
+startServer();
 
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
