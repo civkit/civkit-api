@@ -27,6 +27,8 @@ import crypto from 'crypto';
 import { generateInvoiceLabel } from './utils/invoiceUtils.js';
 import axios from 'axios';
 import https from 'node:https';
+import { announceCivKitNode } from './utils/nostrAnnouncements.js';
+
 dotenv.config();
 
 const app = express();
@@ -50,16 +52,11 @@ const agent = new https.Agent({
 
 app.use(express.json());
 
-const allowedOrigins = [
-  'http://localhost:3001',
-  'https://0714-112-134-238-18.ngrok-free.app',
-  'https://real-meet-monster.ngrok-free.app'// Add your ngrok URL here
-  // Add any other allowed origins
-];
+const allowedOrigins = ['*'];
 
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin) return callback(null, true);
+    if (!origin || allowedOrigins.includes('*')) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
       var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
       return callback(new Error(msg), false);
@@ -222,11 +219,28 @@ app.post('/api/settle-holdinvoices-by-order', authenticateJWT, async (req, res) 
 });
 
 // Initialize NDK and create identity
-initializeNDK().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-});
+async function startServer() {
+  try {
+    app.listen(PORT,  () => {
+      console.log(`Server running on port ${PORT}`);
+      announceCivKitNode()
+        .then(() => console.log('CivKit node announced successfully'))
+        .catch(error => console.error('Failed to announce CivKit node:', error));
+    });
+
+    // Announce every 24 hours
+    setInterval(() => {
+      announceCivKitNode()
+        .then(() => console.log('CivKit node announced successfully'))
+        .catch(error => console.error('Failed to announce CivKit node:', error));
+    }, 24 * 60 * 60 * 1000);
+
+  } catch (error) {
+    console.error('Failed to start server:', error);
+  }
+}
+
+startServer();
 
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
@@ -677,5 +691,25 @@ app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, 
   } catch (error) {
     console.error('Error fetching latest chat details:', error);
     res.status(500).json({ message: 'Error fetching latest chat details' });
+  }
+});
+
+app.get('/api/accept-offer-url/:orderId', authenticateJWT, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.orderId);
+    const chat = await prisma.chat.findFirst({
+      where: { order_id: orderId },
+      orderBy: { created_at: 'desc' },
+      select: { accept_offer_url: true }
+    });
+
+    if (chat && chat.accept_offer_url) {
+      res.json({ url: chat.accept_offer_url });
+    } else {
+      res.status(404).json({ message: 'URL not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching accept offer URL:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
