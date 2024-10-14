@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { authenticateJWT } from './middleware/authMiddleware.js';
+import { authenticateJWT, identifyUserRoleInOrder } from './middleware/authMiddleware.js';
 import { generateToken } from './utils/auth.js';
 import {
   postHoldinvoice,
@@ -283,37 +283,34 @@ app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
 
 app.use('/api/settle', settleRoutes);
 
-// Get all orders
+// Modify the existing route to use identifyUserRoleInOrder middleware
+app.get('/api/orders/:orderId', authenticateJWT, identifyUserRoleInOrder, async (req, res) => {
+  const order = req.order;
+  const userRole = req.userRole;
+  const acceptOfferUrl = req.acceptOfferUrl;
+
+  res.json({
+    order,
+    userRole,
+    acceptOfferUrl: userRole === 'taker' ? acceptOfferUrl : null
+  });
+});
+
+// Add a new route to fetch all orders with user roles
 app.get('/api/orders', authenticateJWT, async (req, res) => {
   try {
     const orders = await prisma.order.findMany();
-    res.status(200).json(orders);
+    const ordersWithRoles = await Promise.all(orders.map(async (order) => {
+      const orderWithRole = { ...order };
+      await identifyUserRoleInOrder({ user: req.user, params: { orderId: order.order_id } }, res, () => {});
+      orderWithRole.userRole = res.locals.userRole;
+      orderWithRole.acceptOfferUrl = res.locals.acceptOfferUrl;
+      return orderWithRole;
+    }));
+    res.status(200).json(ordersWithRoles);
   } catch (error) {
     console.error('Error fetching orders:', error);
     res.status(500).json({ error: 'Failed to fetch orders' });
-  }
-});
-
-//Get order by ID
-
-
-app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
-  const { orderId } = req.params;
-  try {
-    const order = await prisma.order.findUnique({
-      where: {
-        order_id: parseInt(orderId)
-      }
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    res.status(200).json(order);
-  } catch (err) {
-    console.error('Error fetching order:', err);
-    res.status(500).json({ error: 'An error occurred while fetching the order' });
   }
 });
 
@@ -694,17 +691,17 @@ app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, 
   }
 });
 
-app.get('/api/accept-offer-url/:orderId', authenticateJWT, async (req, res) => {
+app.get('/api/accept-offer-url/:orderId', authenticateJWT, identifyUserRoleInOrder, async (req, res) => {
   try {
-    const orderId = parseInt(req.params.orderId);
-    const chat = await prisma.chat.findFirst({
-      where: { order_id: orderId },
-      orderBy: { created_at: 'desc' },
-      select: { accept_offer_url: true }
-    });
+    const userRole = req.userRole;
+    const acceptOfferUrl = req.acceptOfferUrl;
 
-    if (chat && chat.accept_offer_url) {
-      res.json({ url: chat.accept_offer_url });
+    if (userRole !== 'taker') {
+      return res.status(403).json({ message: 'Unauthorized access to this URL' });
+    }
+
+    if (acceptOfferUrl) {
+      res.json({ url: acceptOfferUrl });
     } else {
       res.status(404).json({ message: 'URL not found' });
     }
