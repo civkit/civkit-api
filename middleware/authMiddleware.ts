@@ -72,3 +72,46 @@ export const authorizePayoutSubmission = async (req: any, res: any, next: any) =
   }
 };
 
+export const identifyUserRoleInOrder = async (req: any, res: any, next: any) => {
+  if (!req.user) {
+    return res.sendStatus(401);
+  }
+
+  const orderId = req.params.orderId; // Assuming order_id is in the URL parameters
+  if (!orderId) {
+    return res.status(400).json({ error: 'Order ID is required' });
+  }
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { order_id: parseInt(orderId) },
+      include: { chats: true }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Check if the user is the taker (taker_customer_id matches user's id)
+    if (order.taker_customer_id === req.user.id) {
+      req.userRole = 'taker';
+      
+      // Find the associated chat for this order
+      const chat = order.chats.find(chat => chat.order_id === order.order_id);
+      
+      // If there's a chat with an accept_offer_url, add it to the request
+      if (chat && chat.accept_offer_url) {
+        req.acceptOfferUrl = chat.accept_offer_url;
+      }
+    } else {
+      req.userRole = 'other'; // Could be maker or unrelated user
+    }
+
+    // Add order to the request object for use in the controller
+    req.order = order;
+    next();
+  } catch (error) {
+    console.error('Error in identifyUserRoleInOrder:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};

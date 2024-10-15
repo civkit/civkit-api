@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { authenticateJWT } from './middleware/authMiddleware.js';
+import { authenticateJWT, identifyUserRoleInOrder } from './middleware/authMiddleware.js';
 import { generateToken } from './utils/auth.js';
 import {
   postHoldinvoice,
@@ -27,6 +27,8 @@ import crypto from 'crypto';
 import { generateInvoiceLabel } from './utils/invoiceUtils.js';
 import axios from 'axios';
 import https from 'node:https';
+import { announceCivKitNode } from './utils/nostrAnnouncements.js';
+
 dotenv.config();
 
 const app = express();
@@ -50,16 +52,11 @@ const agent = new https.Agent({
 
 app.use(express.json());
 
-const allowedOrigins = [
-  'http://localhost:3001',
-  'https://0714-112-134-238-18.ngrok-free.app',
-  'https://real-meet-monster.ngrok-free.app'// Add your ngrok URL here
-  // Add any other allowed origins
-];
+const allowedOrigins = ['*'];
 
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin) return callback(null, true);
+    if (!origin || allowedOrigins.includes('*')) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
       var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
       return callback(new Error(msg), false);
@@ -222,11 +219,28 @@ app.post('/api/settle-holdinvoices-by-order', authenticateJWT, async (req, res) 
 });
 
 // Initialize NDK and create identity
-initializeNDK().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-});
+async function startServer() {
+  try {
+    app.listen(PORT,  () => {
+      console.log(`Server running on port ${PORT}`);
+      announceCivKitNode()
+        .then(() => console.log('CivKit node announced successfully'))
+        .catch(error => console.error('Failed to announce CivKit node:', error));
+    });
+
+    // Announce every 24 hours
+    setInterval(() => {
+      announceCivKitNode()
+        .then(() => console.log('CivKit node announced successfully'))
+        .catch(error => console.error('Failed to announce CivKit node:', error));
+    }, 24 * 60 * 60 * 1000);
+
+  } catch (error) {
+    console.error('Failed to start server:', error);
+  }
+}
+
+startServer();
 
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
@@ -269,37 +283,34 @@ app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
 
 app.use('/api/settle', settleRoutes);
 
-// Get all orders
+// Modify the existing route to use identifyUserRoleInOrder middleware
+app.get('/api/orders/:orderId', authenticateJWT, identifyUserRoleInOrder, async (req, res) => {
+  const order = req.order;
+  const userRole = req.userRole;
+  const acceptOfferUrl = req.acceptOfferUrl;
+
+  res.json({
+    order,
+    userRole,
+    acceptOfferUrl: userRole === 'taker' ? acceptOfferUrl : null
+  });
+});
+
+// Add a new route to fetch all orders with user roles
 app.get('/api/orders', authenticateJWT, async (req, res) => {
   try {
     const orders = await prisma.order.findMany();
-    res.status(200).json(orders);
+    const ordersWithRoles = await Promise.all(orders.map(async (order) => {
+      const orderWithRole = { ...order };
+      await identifyUserRoleInOrder({ user: req.user, params: { orderId: order.order_id } }, res, () => {});
+      orderWithRole.userRole = res.locals.userRole;
+      orderWithRole.acceptOfferUrl = res.locals.acceptOfferUrl;
+      return orderWithRole;
+    }));
+    res.status(200).json(ordersWithRoles);
   } catch (error) {
     console.error('Error fetching orders:', error);
     res.status(500).json({ error: 'Failed to fetch orders' });
-  }
-});
-
-//Get order by ID
-
-
-app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
-  const { orderId } = req.params;
-  try {
-    const order = await prisma.order.findUnique({
-      where: {
-        order_id: parseInt(orderId)
-      }
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    res.status(200).json(order);
-  } catch (err) {
-    console.error('Error fetching order:', err);
-    res.status(500).json({ error: 'An error occurred while fetching the order' });
   }
 });
 
@@ -677,5 +688,25 @@ app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, 
   } catch (error) {
     console.error('Error fetching latest chat details:', error);
     res.status(500).json({ message: 'Error fetching latest chat details' });
+  }
+});
+
+app.get('/api/accept-offer-url/:orderId', authenticateJWT, identifyUserRoleInOrder, async (req, res) => {
+  try {
+    const userRole = req.userRole;
+    const acceptOfferUrl = req.acceptOfferUrl;
+
+    if (userRole !== 'taker') {
+      return res.status(403).json({ message: 'Unauthorized access to this URL' });
+    }
+
+    if (acceptOfferUrl) {
+      res.json({ url: acceptOfferUrl });
+    } else {
+      res.status(404).json({ message: 'URL not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching accept offer URL:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
