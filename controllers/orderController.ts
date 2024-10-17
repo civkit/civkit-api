@@ -3,23 +3,26 @@ import { pool } from '../config/db.js';
 import { prisma } from '../config/db.js';  // Import Prisma client
 
 //
-export async function createOrder(req, res) {
-    console.log('Entering createOrder function');
-    try {
-        const customer_id = req.user.id;
-        console.log('Customer ID:', customer_id);
-        
-        const orderData = { ...req.body, customer_id };
-        console.log('Order data to be processed:', orderData);
-        
-        const result = await addOrderAndGenerateInvoice(orderData);
-        console.log('Order creation result:', result);
-        
-        res.status(201).json(result);
-    } catch (error) {
-        console.error('Error in createOrder:', error);
-        res.status(500).json({ error: error.message || 'An unexpected error occurred' });
-    }
+export const createOrder = async (req: Request, res: Response) => {
+  console.log('Entering createOrder function');
+  try {
+    const orderData = req.body;
+    console.log('Order data to be processed:', orderData);
+
+    const { order, invoice } = await addOrderAndGenerateInvoice(orderData);
+
+    res.status(201).json({
+      message: 'Order created successfully',
+      order: order,
+      invoice: invoice
+    });
+  } catch (error) {
+    console.error('Error in createOrder:', error);
+    res.status(500).json({
+      message: 'Failed to create order',
+      error: error.message
+    });
+  }
 }
 
 export async function takeOrder(req, res) {

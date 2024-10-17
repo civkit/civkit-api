@@ -5,89 +5,31 @@ import { PrismaClient } from '@prisma/client';
 config();
 const prisma = new PrismaClient();
 
-async function addOrderAndGenerateInvoice(orderData) {
-    console.log('Starting addOrderAndGenerateInvoice with data:', orderData);
-    const {
-        customer_id,
-        order_details,
-        amount_msat,
-        currency,
-        payment_method,
-        status,
-        type,
-        premium = 0
-    } = orderData;
+export async function addOrderAndGenerateInvoice(orderData: OrderData): Promise<{ order: Order; invoice: Invoice }> {
+  console.log('Starting addOrderAndGenerateInvoice with data:', orderData);
 
-    try {
-        // Insert the order into the database
-        const order = await prisma.order.create({
-            data: {
-                customer_id,
-                order_details,
-                amount_msat,
-                currency,
-                payment_method,
-                status,
-                type,
-                premium
-            }
-        });
-        console.log('Order inserted:', order);
+  const order = await prisma.order.create({
+    data: orderData,
+  });
 
-        // Post the hold invoice
-        console.log('Generating hold invoice');
-        const holdInvoiceData = await postHoldinvoice(amount_msat, `Hold Invoice for Order ${order.order_id}`, order_details);
-        console.log('Hold invoice generated:', holdInvoiceData);
+  console.log('Order inserted:', order);
 
-        if (!holdInvoiceData || !holdInvoiceData.bolt11 || !holdInvoiceData.payment_hash) {
-            throw new Error('Invalid hold invoice data received: ' + JSON.stringify(holdInvoiceData));
-        }
+  if (!order || !order.order_id) {
+    console.error('Failed to create order or get order_id');
+    throw new Error('Failed to create order');
+  }
 
-        // Save hold invoice data to the database
-        const holdInvoice = await prisma.invoice.create({
-            data: {
-                order_id: order.order_id,
-                bolt11: holdInvoiceData.bolt11,
-                amount_msat,
-                status: holdInvoiceData.status || 'pending',
-                description: order_details,
-                payment_hash: holdInvoiceData.payment_hash,
-                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
-                invoice_type: 'hold'
-            }
-        });
-        console.log('Hold invoice saved to database:', holdInvoice);
+  console.log('Generating hold invoice');
+  const invoice = await postHoldinvoice(
+    order.amount_msat,
+    order.order_details,
+    order.order_id,
+    orderData.type === 0 ? 'maker' : 'taker'
+  );
 
-        let fullInvoiceData = null;
-        if (type === 1) { // For sell orders
-            console.log('Generating full invoice for sell order');
-            fullInvoiceData = await postFullAmountInvoice(amount_msat, `Full Invoice for Order ${order.order_id}`, order_details, order.order_id, type);
-            
-            if (!fullInvoiceData || !fullInvoiceData.bolt11) {
-                throw new Error('Failed to generate full amount invoice');
-            }
+  console.log('Hold invoice generated:', invoice);
 
-            // Save full invoice data to the database
-            const fullInvoice = await prisma.invoice.create({
-                data: {
-                    order_id: order.order_id,
-                    bolt11: fullInvoiceData.bolt11,
-                    amount_msat,
-                    status: 'pending',
-                    description: order_details,
-                    payment_hash: fullInvoiceData.payment_hash,
-                    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
-                    invoice_type: 'full'
-                }
-            });
-            console.log('Full invoice saved to database:', fullInvoice);
-        }
-
-        return { order, holdInvoice: holdInvoiceData, fullInvoice: fullInvoiceData };
-    } catch (error) {
-        console.error('Transaction failed:', error);
-        throw error;
-    }
+  return { order, invoice };
 }
 
 async function processTakeOrder(orderId: number, holdInvoice: any) {

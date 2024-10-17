@@ -17,11 +17,25 @@ const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
 const RUNE = process.env.RUNE;
 
 async function postHoldinvoice(amount_msat: number, description: string, orderId: number | string, userType: string) {
-  const orderIdNumber = typeof orderId === 'string' ? parseInt(orderId, 10) : orderId;
+  console.log(`Entering postHoldinvoice with orderId: ${orderId}, type: ${typeof orderId}`);
   
-  if (isNaN(orderIdNumber)) {
-    throw new Error('Invalid orderId provided');
+  const orderIdNumber = Number(orderId);
+  
+  if (isNaN(orderIdNumber) || orderIdNumber <= 0) {
+    console.error(`Invalid orderId provided: ${orderId}`);
+    throw new Error(`Invalid orderId provided: ${orderId}`);
   }
+
+  const order = await prisma.order.findUnique({
+    where: { order_id: orderIdNumber }
+  });
+
+  if (!order) {
+    console.error(`Order with ID ${orderIdNumber} not found`);
+    throw new Error(`Order with ID ${orderIdNumber} not found`);
+  }
+
+  console.log(`Found order: ${JSON.stringify(order)}`);
 
   const timestamp = Date.now();
   const label = `invoice_${orderIdNumber}_${timestamp}`;

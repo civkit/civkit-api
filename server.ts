@@ -113,17 +113,20 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
-  console.log('Received request at /api/holdinvoice');
-  console.log('Request body:', req.body);
   try {
-    const { amount_msat, label, description } = req.body;
-    console.log('Extracted values:', { amount_msat, label, description });
-    const result = await postHoldinvoice(amount_msat, label, description);
-    console.log('postHoldinvoice result:', result);
-    res.json(result);
+    const { amount_msat, label, description, order_id } = req.body;
+    console.log('Received request at /api/holdinvoice');
+    console.log('Request body:', req.body);
+
+    if (!order_id) {
+      throw new Error('order_id is required');
+    }
+
+    const invoice = await postHoldinvoice(amount_msat, description, order_id, 'maker'); // or 'taker' based on your logic
+    res.json(invoice);
   } catch (error) {
     console.error('Error in /api/holdinvoice:', error);
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -198,23 +201,22 @@ export const authorizeForFiatReceived = async (req, res, next) => {
 // In your server.ts, modify the fiat-received route
 app.post('/api/fiat-received', authenticateJWT, authorizeForFiatReceived, async (req, res) => {
   try {
-    const { order_id } = req.body;
-    await handleFiatReceived(parseInt(order_id));
+    const orderId = validateOrderId(req.body.order_id);
+    await handleFiatReceived(orderId);
     res.status(200).json({ message: 'Fiat received processed successfully' });
   } catch (error) {
     console.error('Error processing fiat received:', error);
-    res.status(500).json({ message: 'Error processing fiat received', error: error.message });
+    res.status(400).json({ message: 'Error processing fiat received', error: error.message });
   }
 });
 
 app.post('/api/settle-holdinvoices-by-order', authenticateJWT, async (req, res) => {
   try {
-    const { orderId } = req.body;
+    const orderId = validateOrderId(req.body.orderId);
     const result = await settleHoldInvoicesByOrderIdService(orderId);
     res.status(200).json({ message: 'Hold invoices settled successfully', result });
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    res.status(500).json({ message: 'Error settling hold invoices', error: error.message });
+    res.status(400).json({ message: 'Error settling hold invoices', error: error.message });
   }
 });
 
@@ -377,14 +379,14 @@ app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
 });
 
 app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
-  const { orderId } = req.params;
   try {
+    const orderId = validateOrderId(req.params.orderId);
     let invoice = await prisma.invoice.findFirst({
-      where: { order_id: parseInt(orderId), invoice_type: 'full' }
+      where: { order_id: orderId, invoice_type: 'full' }
     });
 
     if (!invoice) {
-      const order = await prisma.order.findUnique({ where: { order_id: parseInt(orderId) } });
+      const order = await prisma.order.findUnique({ where: { order_id: orderId } });
       if (!order) return res.status(404).json({ error: 'Order not found' });
 
       const label = `full_invoice_${orderId}_${Date.now()}`;
@@ -393,7 +395,7 @@ app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
 
       invoice = await prisma.invoice.create({
         data: {
-          order_id: parseInt(orderId),
+          order_id: orderId,
           bolt11: invoiceData.bolt11,
           amount_msat: BigInt(order.amount_msat),
           description,
@@ -410,7 +412,7 @@ app.get('/api/full-invoice/:orderId', authenticateJWT, async (req, res) => {
     res.json({ invoice: { ...invoice, amount_msat: invoice.amount_msat.toString() } });
   } catch (error) {
     console.error('Error fetching or creating full invoice:', error);
-    res.status(500).json({ error: 'Failed to fetch or create full invoice' });
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -457,11 +459,10 @@ app.use('/api', submitToMainstayRoutes);
 console.log('Registering /api/taker-invoice/:orderId route');
 
 app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
-  console.log('Received request for taker invoice:', req.params.orderId);
-  const orderId = parseInt(req.params.orderId);
-  const takerId = req.user.id;
-
   try {
+    const orderId = validateOrderId(req.params.orderId);
+    const takerId = req.user.id;
+
     const order = await prisma.order.findUnique({
       where: { order_id: orderId },
     });
@@ -487,12 +488,13 @@ app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
     }));
   } catch (error) {
     console.error('[API] Error creating taker hold invoice:', error);
-    res.status(500).json({ error: 'Failed to create taker hold invoice', details: error.message });
+    res.status(400).json({ error: 'Failed to create taker hold invoice', details: error.message });
   }
 });
 
-export async function createTakerHoldInvoice(orderId: number, amount_msat: number, description: string) {
-  console.log(` [createTakerHoldInvoice] Starting for orderId: ${orderId}`);
+export async function createTakerHoldInvoice(orderId: number | string, amount_msat: number, description: string) {
+  const validOrderId = validateOrderId(orderId);
+  console.log(` [createTakerHoldInvoice] Starting for orderId: ${validOrderId}`);
 
   // Add this line to calculate 5%
   const holdAmount = Math.floor(amount_msat * 0.05);
@@ -501,21 +503,21 @@ export async function createTakerHoldInvoice(orderId: number, amount_msat: numbe
     // Check for existing invoice within the transaction
     const existingInvoice = await prisma.invoice.findFirst({
       where: {
-        order_id: orderId,
+        order_id: validOrderId,
         user_type: 'taker',
         invoice_type: 'hold',
       }
     });
 
     if (existingInvoice) {
-      console.log(`[createTakerHoldInvoice] Existing hold invoice found for order ${orderId}`);
+      console.log(`[createTakerHoldInvoice] Existing hold invoice found for order ${validOrderId}`);
       return existingInvoice;
     }
 
-    console.log(`[createTakerHoldInvoice] No existing invoice found. Creating new invoice for order ${orderId}`);
+    console.log(`[createTakerHoldInvoice] No existing invoice found. Creating new invoice for order ${validOrderId}`);
 
     const timestamp = Date.now();
-    const label = `taker_hold_${orderId}_${timestamp}`;
+    const label = `taker_hold_${validOrderId}_${timestamp}`;
 
     // Now create the hold invoice on the Lightning node
     try {
@@ -541,7 +543,7 @@ export async function createTakerHoldInvoice(orderId: number, amount_msat: numbe
       // Create the invoice in the database with the real data
       const newInvoice = await prisma.invoice.create({
         data: {
-          order_id: orderId,
+          order_id: validOrderId,
           bolt11: response.data.bolt11,
           amount_msat: BigInt(amount_msat),
           description: description,
@@ -583,11 +585,11 @@ function serializeBigInt(data: any): any {
 }
 
 app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) => {
-  const { orderId } = req.params;
   try {
+    const orderId = validateOrderId(req.params.orderId);
     const dbInvoice = await prisma.invoice.findFirst({
       where: { 
-        order_id: parseInt(orderId), 
+        order_id: orderId, 
         invoice_type: 'full' 
       }
     });
@@ -617,7 +619,7 @@ app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) =
     if (nodeInvoice.status === 'paid' && dbInvoice.status !== 'paid') {
       await prisma.invoice.updateMany({
         where: { 
-          order_id: parseInt(orderId),
+          order_id: orderId,
           invoice_type: 'full'
         },
         data: { status: 'paid' }
@@ -628,7 +630,7 @@ app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) =
     res.json({ status: nodeInvoice.status });
   } catch (error) {
     console.error('Error checking full invoice:', error);
-    res.status(500).json({ error: 'Failed to check full invoice' });
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -710,3 +712,11 @@ app.get('/api/accept-offer-url/:orderId', authenticateJWT, identifyUserRoleInOrd
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+function validateOrderId(orderId: string | number): number {
+  const parsedId = typeof orderId === 'string' ? parseInt(orderId, 10) : orderId;
+  if (isNaN(parsedId) || parsedId <= 0) {
+    throw new Error('Invalid order ID');
+  }
+  return parsedId;
+}
