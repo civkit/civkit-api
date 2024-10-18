@@ -37,25 +37,6 @@ async function postHoldinvoice(amount_msat: number, description: string, orderId
     const holdAmount = Math.floor(amount_msat * 0.05);
     console.log(`Adjusted hold amount: ${holdAmount} msat (5% of ${amount_msat} msat)`);
 
-    const existingInvoice = await prisma.invoice.findFirst({
-      where: {
-        order_id: orderIdNumber,
-        invoice_type: 'hold',
-        user_type: userType,
-        status: { in: ['pending', 'unpaid'] }
-      }
-    });
-
-    if (existingInvoice) {
-      console.log(`Existing hold invoice found for order ${orderIdNumber} and user type ${userType}`);
-      return {
-        bolt11: existingInvoice.bolt11,
-        payment_hash: existingInvoice.payment_hash,
-        status: existingInvoice.status,
-        invoice_type: 'hold'
-      };
-    }
-
     const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/holdinvoice`, {
       amount_msat: holdAmount,
       label,
@@ -81,23 +62,6 @@ async function postHoldinvoice(amount_msat: number, description: string, orderId
       status: 'unpaid',
       invoice_type: 'hold'
     };
-
-    const savedInvoice = await prisma.invoice.create({
-      data: {
-        order_id: orderIdNumber,
-        bolt11: invoiceData.bolt11,
-        amount_msat: BigInt(holdAmount),
-        description: description,
-        status: invoiceData.status,
-        created_at: new Date(),
-        expires_at: new Date(response.data.expires_at * 1000),
-        payment_hash: invoiceData.payment_hash,
-        invoice_type: 'hold',
-        user_type: userType,
-      },
-    });
-
-    console.log('Hold invoice saved to database:', savedInvoice);
 
     return invoiceData;
   } catch (error) {

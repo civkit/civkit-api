@@ -5,8 +5,22 @@ import { PrismaClient } from '@prisma/client';
 config();
 const prisma = new PrismaClient();
 
+// Add this helper function at the top of the file
+function serializeBigInt(data: any): any {
+  if (typeof data === 'bigint') {
+    return data.toString();
+  } else if (Array.isArray(data)) {
+    return data.map(serializeBigInt);
+  } else if (typeof data === 'object' && data !== null) {
+    return Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [key, serializeBigInt(value)])
+    );
+  }
+  return data;
+}
+
 async function addOrderAndGenerateInvoice(orderData) {
-    console.log('Starting addOrderAndGenerateInvoice with data:', orderData);
+    console.log('Starting addOrderAndGenerateInvoice with data:', JSON.stringify(orderData, null, 2));
     const {
         customer_id,
         order_details,
@@ -32,15 +46,16 @@ async function addOrderAndGenerateInvoice(orderData) {
                 premium
             }
         });
-        console.log('Order inserted:', order);
+        console.log('Order inserted:', JSON.stringify(serializeBigInt(order), null, 2));
 
-        // Post the hold invoice
-        console.log('Generating hold invoice');
-        const holdInvoiceData = await postHoldinvoice(amount_msat, `Hold Invoice for Order ${order.order_id}`, order_details);
-        console.log('Hold invoice generated:', holdInvoiceData);
+        // Generate hold invoice for all orders
+        console.log(`Generating hold invoice for order ${order.order_id}`);
+        const holdInvoiceData = await postHoldinvoice(amount_msat, `Hold Invoice for Order ${order.order_id}`, order.order_id.toString(), 'maker');
+        console.log('Hold invoice generated:', JSON.stringify(serializeBigInt(holdInvoiceData), null, 2));
 
         if (!holdInvoiceData || !holdInvoiceData.bolt11 || !holdInvoiceData.payment_hash) {
-            throw new Error('Invalid hold invoice data received: ' + JSON.stringify(holdInvoiceData));
+            console.error('Invalid hold invoice data received:', JSON.stringify(holdInvoiceData, null, 2));
+            throw new Error('Invalid hold invoice data received');
         }
 
         // Save hold invoice data to the database
@@ -48,42 +63,46 @@ async function addOrderAndGenerateInvoice(orderData) {
             data: {
                 order_id: order.order_id,
                 bolt11: holdInvoiceData.bolt11,
-                amount_msat,
+                amount_msat: BigInt(amount_msat),
                 status: holdInvoiceData.status || 'pending',
                 description: order_details,
                 payment_hash: holdInvoiceData.payment_hash,
                 expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
-                invoice_type: 'hold'
+                invoice_type: 'hold',
+                user_type: 'maker'
             }
         });
-        console.log('Hold invoice saved to database:', holdInvoice);
+        console.log('Hold invoice saved to database:', JSON.stringify(serializeBigInt(holdInvoice), null, 2));
 
         let fullInvoiceData = null;
         if (type === 1) { // For sell orders
             console.log('Generating full invoice for sell order');
-            fullInvoiceData = await postFullAmountInvoice(amount_msat, `Full Invoice for Order ${order.order_id}`, order_details, order.order_id, type);
-            
-            if (!fullInvoiceData || !fullInvoiceData.bolt11) {
-                throw new Error('Failed to generate full amount invoice');
-            }
+            fullInvoiceData = await postFullAmountInvoice(amount_msat, `Full Invoice for Order ${order.order_id}`, order_details, order.order_id, type.toString());
+            console.log('Full invoice generated:', JSON.stringify(serializeBigInt(fullInvoiceData), null, 2));
 
             // Save full invoice data to the database
             const fullInvoice = await prisma.invoice.create({
                 data: {
                     order_id: order.order_id,
                     bolt11: fullInvoiceData.bolt11,
-                    amount_msat,
+                    amount_msat: BigInt(amount_msat),
                     status: 'pending',
                     description: order_details,
                     payment_hash: fullInvoiceData.payment_hash,
                     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
-                    invoice_type: 'full'
+                    invoice_type: 'full',
+                    user_type: 'maker'
                 }
             });
-            console.log('Full invoice saved to database:', fullInvoice);
+            console.log('Full invoice saved to database:', JSON.stringify(serializeBigInt(fullInvoice), null, 2));
         }
 
-        return { order, holdInvoice: holdInvoiceData, fullInvoice: fullInvoiceData };
+        // Return the necessary data
+        return { 
+            order, 
+            holdInvoice: holdInvoiceData.bolt11,
+            fullInvoice: fullInvoiceData ? fullInvoiceData.bolt11 : null
+        };
     } catch (error) {
         console.error('Transaction failed:', error);
         throw error;
