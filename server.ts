@@ -128,18 +128,16 @@ app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/holdinvoicelookup', authenticateJWT, async (req, res) => {
+  console.log('[/api/holdinvoicelookup] Received request');
   const { payment_hash } = req.body;
-
-  if (!payment_hash) {
-    return res.status(400).json({ error: 'Payment hash is required' });
-  }
-
+  console.log('[/api/holdinvoicelookup] Payment hash:', payment_hash);
   try {
     const result = await holdInvoiceLookup(payment_hash);
+    console.log('[/api/holdinvoicelookup] Lookup result:', result);
     res.json(result);
   } catch (error) {
-    console.error('Error in /api/holdinvoicelookup:', error);
-    res.status(500).json({ error: 'Internal server error', message: error.message });
+    console.error('[/api/holdinvoicelookup] Error:', error);
+    res.status(500).json({ error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 

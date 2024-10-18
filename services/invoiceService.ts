@@ -73,35 +73,37 @@ async function postHoldinvoice(amount_msat: number, description: string, orderId
 
 async function holdInvoiceLookup(payment_hash: string) {
   try {
+    console.log(`[holdInvoiceLookup] Starting lookup for payment_hash: ${payment_hash}`);
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Rune': RUNE,
+        'Rune': RUNE || '',
       },
       body: JSON.stringify({ payment_hash }),
       agent: new https.Agent({ rejectUnauthorized: false })
     });
+
+    console.log(`[holdInvoiceLookup] Response status: ${response.status}`);
 
     if (!response.ok) {
       throw new Error(`HTTP Error: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('Hold invoice lookup response:', data);
+    console.log('[holdInvoiceLookup] Response data:', data);
 
     if (data.state === 'ACCEPTED') {
+      console.log(`[holdInvoiceLookup] Invoice ${payment_hash} is ACCEPTED. Updating status.`);
       await updateInvoiceStatus(payment_hash, 'paid');
+    } else {
+      console.log(`[holdInvoiceLookup] Invoice ${payment_hash} state: ${data.state}`);
     }
 
-    return {
-      state: data.state,
-      htlc_expiry: data.htlc_expiry,
-      // Include other relevant data from the response
-    };
+    return data;
   } catch (error) {
-    console.error('Error in holdInvoiceLookup:', error);
+    console.error('[holdInvoiceLookup] Error:', error);
     throw error;
   }
 }
