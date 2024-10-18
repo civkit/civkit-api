@@ -28,6 +28,7 @@ import { generateInvoiceLabel } from './utils/invoiceUtils.js';
 import axios from 'axios';
 import https from 'node:https';
 import { announceCivKitNode } from './utils/nostrAnnouncements.js';
+import { createPayout } from './services/payoutService.js';
 
 dotenv.config();
 
@@ -706,5 +707,39 @@ app.get('/api/accept-offer-url/:orderId', authenticateJWT, identifyUserRoleInOrd
   } catch (error) {
     console.error('Error fetching accept offer URL:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/payouts/submit', authenticateJWT, async (req, res) => {
+  const { order_id, ln_invoice } = req.body;
+  
+  if (!order_id || !ln_invoice) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  try {
+    // Fetch the order to ensure it exists and to get the amount
+    const order = await prisma.order.findUnique({
+      where: { order_id: parseInt(order_id) },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Create the payout record
+    const payout = await prisma.payout.create({
+      data: {
+        order_id: parseInt(order_id),
+        ln_invoice,
+        amount_msat: order.amount_msat,
+        status: 'pending',
+      },
+    });
+
+    res.json({ message: 'Payout submitted successfully', payout });
+  } catch (error) {
+    console.error('Error submitting payout:', error);
+    res.status(500).json({ error: 'Failed to submit payout' });
   }
 });
