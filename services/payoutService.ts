@@ -18,13 +18,13 @@ async function createPayout(orderId: number, lnInvoice: string) {
 
     // Validate the invoice amount matches the order amount
     // This validation might be done here or in a separate function
+    // You may want to implement this validation logic
 
-    // Create the payout record
+    // Create the payout record without amount_msat
     const payout = await prisma.payout.create({
       data: {
         order_id: orderId,
         ln_invoice: lnInvoice,
-        amount_msat: order.amount_msat,
         status: 'pending',
       },
     });
