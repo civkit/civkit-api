@@ -743,3 +743,43 @@ app.post('/api/payouts/submit', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: 'Failed to submit payout' });
   }
 });
+
+app.post('/api/taker-full-invoice/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const order = await prisma.order.findUnique({ where: { order_id: parseInt(orderId) } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const existingInvoice = await prisma.invoice.findFirst({
+      where: { order_id: parseInt(orderId), invoice_type: 'full', user_type: 'taker' }
+    });
+
+    if (existingInvoice) {
+      return res.json({ invoice: serializeBigInt(existingInvoice) });
+    }
+
+    const label = `taker_full_invoice_${orderId}_${Date.now()}`;
+    const description = `Taker full invoice for order ${orderId}`;
+    const invoiceData = await postFullAmountInvoice(order.amount_msat, label, description, order.order_id, order.type.toString());
+
+    const newInvoice = await prisma.invoice.create({
+      data: {
+        order_id: parseInt(orderId),
+        bolt11: invoiceData.bolt11,
+        amount_msat: BigInt(order.amount_msat),
+        description,
+        status: 'unpaid',
+        created_at: new Date(),
+        expires_at: new Date(invoiceData.expires_at * 1000),
+        payment_hash: invoiceData.payment_hash,
+        invoice_type: 'full',
+        user_type: 'taker'
+      }
+    });
+
+    res.json({ invoice: serializeBigInt(newInvoice) });
+  } catch (error) {
+    console.error('Error creating taker full invoice:', error);
+    res.status(500).json({ error: 'Failed to create taker full invoice' });
+  }
+});
