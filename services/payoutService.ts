@@ -16,10 +16,6 @@ async function createPayout(orderId: number, lnInvoice: string) {
       throw new Error('Order not found');
     }
 
-    // Validate the invoice amount matches the order amount
-    // This validation might be done here or in a separate function
-    // You may want to implement this validation logic
-
     // Create the payout record without amount_msat
     const payout = await prisma.payout.create({
       data: {
@@ -28,9 +24,6 @@ async function createPayout(orderId: number, lnInvoice: string) {
         status: 'pending',
       },
     });
-
-    // Here you might want to initiate the actual payout process
-    // This could involve calling your Lightning Node API to pay the invoice
 
     return payout;
   } catch (error) {
