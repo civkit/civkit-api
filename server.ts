@@ -24,7 +24,6 @@ import dotenv from 'dotenv'
 import submitToMainstayRoutes from './routes/submitToMainstay.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 import crypto from 'crypto';
-import { generateInvoiceLabel } from './utils/invoiceUtils.js';
 import axios from 'axios';
 import https from 'node:https';
 import { announceCivKitNode } from './utils/nostrAnnouncements.js';
@@ -275,7 +274,7 @@ app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => 
 
     if (!chat) {
       // Create a new chat if one doesn't exist
-      const makeOfferUrl = `https://chat.civkit.africa/ui/chat/make-offer?orderId=${orderId}`;
+      const makeOfferUrl = `http://localhost:3456/ui/chat/make-offer?orderId=${orderId}`;
       
       // Make a request to the chat app to create the make offer URL
       const chatAppResponse = await axios.post(
@@ -326,10 +325,13 @@ app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => 
 app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
   try {
     const { chat_id, accept_offer_url } = req.body;
+    // Ensure accept_offer_url is a complete URL
+    if (!accept_offer_url.startsWith('http://') && !accept_offer_url.startsWith('https://')) {
+      throw new Error('Invalid accept_offer_url format');
+    }
     await updateAcceptOfferUrl(chat_id, accept_offer_url);
     res.status(200).json({ message: 'Accept-offer URL updated successfully' });
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Failed to update accept-offer URL', error: error.message });
   }
 });
@@ -861,6 +863,7 @@ app.post('/api/create-make-offer', async (req, res) => {
     res.status(500).json({ error: 'Failed to process make-offer request' });
   }
 });
+
 
 
 
