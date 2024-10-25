@@ -104,6 +104,12 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
     const user = await authenticateUser(username, password);
+
+    // Check if the user's registration status is complete
+    if (user.status !== 'complete') {
+      return res.status(403).json({ message: 'Registration not complete. Please complete the registration process.' });
+    }
+
     const token = generateToken(user);
     res.json({ token });
   } catch (error) {
