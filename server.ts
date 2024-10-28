@@ -197,11 +197,26 @@ export const authorizeForFiatReceived = async (req, res, next) => {
 app.post('/api/fiat-received', authenticateJWT, authorizeForFiatReceived, async (req, res) => {
   try {
     const { order_id } = req.body;
-    await handleFiatReceived(parseInt(order_id));
+    const result = await handleFiatReceived(parseInt(order_id));
+    
+    // If there's a payment error from the lightning node
+    if (result?.error) {
+      return res.status(400).json({
+        error: 'Payment Failed',
+        details: result.error,
+        code: result.code || 'PAYMENT_ERROR'
+      });
+    }
+    
     res.status(200).json({ message: 'Fiat received processed successfully' });
   } catch (error) {
     console.error('Error processing fiat received:', error);
-    res.status(500).json({ message: 'Error processing fiat received', error: error.message });
+    // Send structured error response
+    res.status(500).json({
+      error: 'Payment Failed',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      code: error.code || 'INTERNAL_ERROR'
+    });
   }
 });
 
@@ -899,6 +914,7 @@ app.get('/api/my-orders', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch orders' });
   }
 });
+
 
 
 
