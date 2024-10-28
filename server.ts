@@ -352,7 +352,7 @@ app.get('/api/orders/:orderId', authenticateJWT, identifyUserRoleInOrder, async 
 });
 
 // Add a new route to fetch all orders with user roles
-app.get('/api/orders', authenticateJWT, async (req, res) => {
+app.get('/api/all-orders', authenticateJWT, async (req, res) => {
   try {
     const orders = await prisma.order.findMany();
     const ordersWithRoles = await Promise.all(orders.map(async (order) => {
@@ -863,6 +863,44 @@ app.post('/api/create-make-offer', async (req, res) => {
     res.status(500).json({ error: 'Failed to process make-offer request' });
   }
 });
+
+// Show all pending orders (no auth required)
+app.get('/api/orders', async (req, res) => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: {
+        OR: [
+          { status: 'pending' },
+          { status: 'Pending' }
+        ]
+      }
+    });
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error('Error fetching pending orders:', error);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+// Show user's orders (requires auth)
+app.get('/api/my-orders', authenticateJWT, async (req, res) => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: {
+        OR: [
+          { customer_id: req.user.id },
+          { taker_customer_id: req.user.id }
+        ]
+      }
+    });
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error('Error fetching user orders:', error);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+
 
 
 
