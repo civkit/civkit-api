@@ -104,6 +104,12 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
     const user = await authenticateUser(username, password);
+
+    // Check if the user's registration status is complete
+    if (user.status !== 'complete') {
+      return res.status(403).json({ message: 'Registration not complete. Please complete the registration process.' });
+    }
+
     const token = generateToken(user);
     res.json({ token });
   } catch (error) {
@@ -915,20 +921,50 @@ app.get('/api/my-orders', authenticateJWT, async (req, res) => {
   }
 });
 
+app.post('/api/ratings/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  const { rating, remarks } = req.body;
+  const userId = req.user.id;
 
+  console.log('orderId', orderId);
 
+  try {
+    // Fetch orders where the user is either the customer or the taker
+    const trades = await prisma.order.findMany({
+      where: {
+        OR: [
+          { customer_id: parseInt(userId) },
+          { taker_customer_id: parseInt(userId) }
+        ]
+      },
+      include: {
+        ratings: true // Include associated ratings
+      }
+    });
 
+    // If no trades are found, return a 404
+    if (!trades || trades.length === 0) {
+      return res.status(404).json({ message: 'No trades found for this user' });
+    }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+    // Format the response to include trades and their associated reviews
+    const response = trades.map(trade => ({
+      order_id: trade.order_id,
+      order_details: trade.order_details,
+      amount_msat: trade.amount_msat,
+      currency: trade.currency,
+      status: trade.status,
+      created_at: trade.created_at,
+      ratings: trade.ratings.map(rating => ({
+        rating_id: rating.rating_id,
+        rating: rating.rating,
+        remarks: rating.remarks,
+        created_at: rating.created_at
+      }))
+    }));
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Error fetching user trades:', error);
+    res.status(500).json({ error: 'Failed to fetch user trades' });
+  }
+});
