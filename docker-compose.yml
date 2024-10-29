@@ -8,3 +8,5 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - LIGHTNING_NODE_API_URL=${LIGHTNING_NODE_API_URL}
+    ports:
+      - "3000:3000"

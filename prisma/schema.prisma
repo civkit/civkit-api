@@ -64,6 +64,7 @@ model Order {
   taker_customer_id Int?
   chats             Chat[]
   payouts           Payout[]
+  ratings           Rating[]
 
   @@map("orders")
 }
@@ -91,4 +92,16 @@ model Payout {
   order      Order     @relation(fields: [order_id], references: [order_id])
 
   @@map("payouts")
+}
+
+model Rating {
+  rating_id Int      @id @default(autoincrement())
+  order_id  Int
+  rating    Int
+  remarks   String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  order     Order    @relation(fields: [order_id], references: [order_id])
+
+  @@map("ratings")
 }

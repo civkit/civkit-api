@@ -24,10 +24,10 @@ import dotenv from 'dotenv'
 import submitToMainstayRoutes from './routes/submitToMainstay.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 import crypto from 'crypto';
-import { generateInvoiceLabel } from './utils/invoiceUtils.js';
 import axios from 'axios';
 import https from 'node:https';
 import { announceCivKitNode } from './utils/nostrAnnouncements.js';
+import { createPayout } from './services/payoutService.js';
 
 dotenv.config();
 
@@ -104,6 +104,12 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
     const user = await authenticateUser(username, password);
+
+    // Check if the user's registration status is complete
+    if (user.status !== 'complete') {
+      return res.status(403).json({ message: 'Registration not complete. Please complete the registration process.' });
+    }
+
     const token = generateToken(user);
     res.json({ token });
   } catch (error) {
@@ -128,18 +134,16 @@ app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/holdinvoicelookup', authenticateJWT, async (req, res) => {
+  console.log('[/api/holdinvoicelookup] Received request');
   const { payment_hash } = req.body;
-
-  if (!payment_hash) {
-    return res.status(400).json({ error: 'Payment hash is required' });
-  }
-
+  console.log('[/api/holdinvoicelookup] Payment hash:', payment_hash);
   try {
     const result = await holdInvoiceLookup(payment_hash);
+    console.log('[/api/holdinvoicelookup] Lookup result:', result);
     res.json(result);
   } catch (error) {
-    console.error('Error in /api/holdinvoicelookup:', error);
-    res.status(500).json({ error: 'Internal server error', message: error.message });
+    console.error('[/api/holdinvoicelookup] Error:', error);
+    res.status(500).json({ error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
@@ -199,11 +203,26 @@ export const authorizeForFiatReceived = async (req, res, next) => {
 app.post('/api/fiat-received', authenticateJWT, authorizeForFiatReceived, async (req, res) => {
   try {
     const { order_id } = req.body;
-    await handleFiatReceived(parseInt(order_id));
+    const result = await handleFiatReceived(parseInt(order_id));
+    
+    // If there's a payment error from the lightning node
+    if (result?.error) {
+      return res.status(400).json({
+        error: 'Payment Failed',
+        details: result.error,
+        code: result.code || 'PAYMENT_ERROR'
+      });
+    }
+    
     res.status(200).json({ message: 'Fiat received processed successfully' });
   } catch (error) {
     console.error('Error processing fiat received:', error);
-    res.status(500).json({ message: 'Error processing fiat received', error: error.message });
+    // Send structured error response
+    res.status(500).json({
+      error: 'Payment Failed',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      code: error.code || 'INTERNAL_ERROR'
+    });
   }
 });
 
@@ -256,15 +275,69 @@ app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => 
   const { orderId } = req.body;
   const userId = req.user.id;
   try {
-    const result = await checkInvoicesAndCreateChatroom(orderId, userId);
-    res.status(200).json(result);
-  } catch (error) {
-    if (error.message === 'User is neither maker nor taker of this order') {
-      res.status(403).json({ error: 'Unauthorized access to this order' });
-    } else {
-      console.error('[/api/check-and-create-chatroom] Error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+    const order = await prisma.order.findUnique({
+      where: { order_id: orderId },
+      include: { chats: true }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
     }
+
+    const isMaker = order.customer_id === userId;
+    const isTaker = order.taker_customer_id === userId;
+
+    if (!isMaker && !isTaker) {
+      return res.status(403).json({ error: 'Unauthorized access to this order' });
+    }
+
+    let chat = order.chats[0];
+
+    if (!chat) {
+      // Create a new chat if one doesn't exist
+      const makeOfferUrl = `http://localhost:3456/ui/chat/make-offer?orderId=${orderId}`;
+      
+      // Make a request to the chat app to create the make offer URL
+      const chatAppResponse = await axios.post(
+        `${process.env.CHAT_APP_URL}/api/chat/make-offer`,
+        { orderId },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            // Add any necessary authentication headers for the chat app
+          }
+        }
+      );
+
+      if (!chatAppResponse.data || !chatAppResponse.data.token) {
+        throw new Error('Failed to create make offer URL in chat app');
+      }
+
+      const chatToken = chatAppResponse.data.token;
+      const chatRoomUrl = `https://chat.civkit.africa/ui/chat/room/${chatToken}`;
+
+      chat = await prisma.chat.create({
+        data: {
+          order_id: orderId,
+          chatroom_url: chatRoomUrl,
+          make_offer_url: makeOfferUrl,
+          chat_token: chatToken,
+          // We'll set accept_offer_url later when the maker hits the make-offer endpoint
+          accept_offer_url: null
+        }
+      });
+    }
+
+    const responseData = {
+      makeOfferUrl: chat.make_offer_url,
+      acceptOfferUrl: isTaker ? chat.accept_offer_url : null,
+      userRole: isMaker ? 'maker' : 'taker'
+    };
+
+    res.status(200).json(responseData);
+  } catch (error) {
+    console.error('[/api/check-and-create-chatroom] Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -273,10 +346,13 @@ app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => 
 app.post('/api/update-accept-offer-url', authenticateJWT, async (req, res) => {
   try {
     const { chat_id, accept_offer_url } = req.body;
+    // Ensure accept_offer_url is a complete URL
+    if (!accept_offer_url.startsWith('http://') && !accept_offer_url.startsWith('https://')) {
+      throw new Error('Invalid accept_offer_url format');
+    }
     await updateAcceptOfferUrl(chat_id, accept_offer_url);
     res.status(200).json({ message: 'Accept-offer URL updated successfully' });
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(500).json({ message: 'Failed to update accept-offer URL', error: error.message });
   }
 });
@@ -297,7 +373,7 @@ app.get('/api/orders/:orderId', authenticateJWT, identifyUserRoleInOrder, async 
 });
 
 // Add a new route to fetch all orders with user roles
-app.get('/api/orders', authenticateJWT, async (req, res) => {
+app.get('/api/all-orders', authenticateJWT, async (req, res) => {
   try {
     const orders = await prisma.order.findMany();
     const ordersWithRoles = await Promise.all(orders.map(async (order) => {
@@ -641,15 +717,13 @@ app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, 
     const orderId = parseInt(req.params.orderId);
     const userId = req.user.id;
 
-    console.log(`Fetching chat details for order ${orderId}, user ${userId}`);
-
+    // Check if the user is authorized to access this order
     const order = await prisma.order.findUnique({
       where: { order_id: orderId },
-      select: { customer_id: true, taker_customer_id: true, type: true }
+      select: { customer_id: true, taker_customer_id: true }
     });
 
     if (!order) {
-      console.log(`Order ${orderId} not found`);
       return res.status(404).json({ message: 'Order not found' });
     }
 
@@ -657,34 +731,24 @@ app.get('/api/order/:orderId/latest-chat-details', authenticateJWT, async (req, 
     const isTaker = order.taker_customer_id === userId;
 
     if (!isMaker && !isTaker) {
-      console.log(`User ${userId} is neither maker nor taker of order ${orderId}`);
       return res.status(403).json({ message: 'Unauthorized access to this order' });
     }
 
+    // Fetch the latest chat for this order
     const latestChat = await prisma.chat.findFirst({
       where: { order_id: orderId },
       orderBy: { created_at: 'desc' },
-      select: { 
-        chatroom_url: true,
-        accept_offer_url: true 
-      }
+      select: { chatroom_url: true, accept_offer_url: true }
     });
 
     if (!latestChat) {
-      console.log(`No chat found for order ${orderId}`);
       return res.status(404).json({ message: 'No chat found for this order' });
     }
 
-    console.log(`Chat details found for order ${orderId}:`, latestChat);
+    const chatUrl = isMaker ? latestChat.chatroom_url : latestChat.accept_offer_url;
+    const userRole = isMaker ? 'maker' : 'taker';
 
-    let chatUrl;
-    if (isMaker) {
-      chatUrl = latestChat.chatroom_url;
-    } else if (isTaker) {
-      chatUrl = latestChat.accept_offer_url;
-    }
-
-    res.json({ chatUrl });
+    res.json({ chatUrl, userRole });
   } catch (error) {
     console.error('Error fetching latest chat details:', error);
     res.status(500).json({ message: 'Error fetching latest chat details' });
@@ -708,5 +772,199 @@ app.get('/api/accept-offer-url/:orderId', authenticateJWT, identifyUserRoleInOrd
   } catch (error) {
     console.error('Error fetching accept offer URL:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/payouts/submit', authenticateJWT, async (req, res) => {
+  const { order_id, ln_invoice } = req.body;
+  
+  if (!order_id || !ln_invoice) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  try {
+    // Fetch the order to ensure it exists and to get the amount
+    const order = await prisma.order.findUnique({
+      where: { order_id: parseInt(order_id) },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Create the payout record
+    const payout = await prisma.payout.create({
+      data: {
+        order_id: parseInt(order_id),
+        ln_invoice,
+        amount_msat: order.amount_msat,
+        status: 'pending',
+      },
+    });
+
+    res.json({ message: 'Payout submitted successfully', payout });
+  } catch (error) {
+    console.error('Error submitting payout:', error);
+    res.status(500).json({ error: 'Failed to submit payout' });
+  }
+});
+
+app.post('/api/taker-full-invoice/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const order = await prisma.order.findUnique({ where: { order_id: parseInt(orderId) } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const existingInvoice = await prisma.invoice.findFirst({
+      where: { order_id: parseInt(orderId), invoice_type: 'full', user_type: 'taker' }
+    });
+
+    if (existingInvoice) {
+      return res.json({ invoice: serializeBigInt(existingInvoice) });
+    }
+
+    const label = `taker_full_invoice_${orderId}_${Date.now()}`;
+    const description = `Taker full invoice for order ${orderId}`;
+    const invoiceData = await postFullAmountInvoice(order.amount_msat, label, description, order.order_id, order.type.toString());
+
+    const newInvoice = await prisma.invoice.create({
+      data: {
+        order_id: parseInt(orderId),
+        bolt11: invoiceData.bolt11,
+        amount_msat: BigInt(order.amount_msat),
+        description,
+        status: 'unpaid',
+        created_at: new Date(),
+        expires_at: new Date(invoiceData.expires_at * 1000),
+        payment_hash: invoiceData.payment_hash,
+        invoice_type: 'full',
+        user_type: 'taker'
+      }
+    });
+
+    res.json({ invoice: serializeBigInt(newInvoice) });
+  } catch (error) {
+    console.error('Error creating taker full invoice:', error);
+    res.status(500).json({ error: 'Failed to create taker full invoice' });
+  }
+});
+
+// Remove the authenticateJWT middleware
+app.post('/api/create-make-offer', async (req, res) => {
+  const { orderId } = req.body;
+  
+  console.log('Received request to create make-offer for orderId:', orderId);
+
+  if (!orderId) {
+    console.error('Order ID is missing in the request');
+    return res.status(400).json({ error: 'Order ID is required' });
+  }
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { order_id: parseInt(orderId) },
+      include: { chats: true }
+    });
+
+    console.log('Found order:', order);
+
+    if (!order) {
+      console.error(`Order not found for ID: ${orderId}`);
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Construct the make-offer URL
+    const makeOfferUrl = `http://localhost:3456/ui/chat/make-offer?orderId=${order.order_id}`;
+
+    // Return the complete URL
+    res.json({ makeOfferUrl });
+
+  } catch (error) {
+    console.error('Error processing make-offer request:', error);
+    res.status(500).json({ error: 'Failed to process make-offer request' });
+  }
+});
+
+// Show all pending orders (no auth required)
+app.get('/api/orders', async (req, res) => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: {
+        OR: [
+          { status: 'pending' },
+          { status: 'Pending' }
+        ]
+      }
+    });
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error('Error fetching pending orders:', error);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+// Show user's orders (requires auth)
+app.get('/api/my-orders', authenticateJWT, async (req, res) => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: {
+        OR: [
+          { customer_id: req.user.id },
+          { taker_customer_id: req.user.id }
+        ]
+      }
+    });
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error('Error fetching user orders:', error);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+app.post('/api/ratings/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  const { rating, remarks } = req.body;
+  const userId = req.user.id;
+
+  console.log('orderId', orderId);
+
+  try {
+    // Fetch orders where the user is either the customer or the taker
+    const trades = await prisma.order.findMany({
+      where: {
+        OR: [
+          { customer_id: parseInt(userId) },
+          { taker_customer_id: parseInt(userId) }
+        ]
+      },
+      include: {
+        ratings: true // Include associated ratings
+      }
+    });
+
+    // If no trades are found, return a 404
+    if (!trades || trades.length === 0) {
+      return res.status(404).json({ message: 'No trades found for this user' });
+    }
+
+    // Format the response to include trades and their associated reviews
+    const response = trades.map(trade => ({
+      order_id: trade.order_id,
+      order_details: trade.order_details,
+      amount_msat: trade.amount_msat,
+      currency: trade.currency,
+      status: trade.status,
+      created_at: trade.created_at,
+      ratings: trade.ratings.map(rating => ({
+        rating_id: rating.rating_id,
+        rating: rating.rating,
+        remarks: rating.remarks,
+        created_at: rating.created_at
+      }))
+    }));
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Error fetching user trades:', error);
+    res.status(500).json({ error: 'Failed to fetch user trades' });
   }
 });
