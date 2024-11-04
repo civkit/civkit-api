@@ -926,7 +926,63 @@ app.post('/api/ratings/:orderId', authenticateJWT, async (req, res) => {
   const { rating, remarks } = req.body;
   const userId = req.user.id;
 
-  console.log('orderId', orderId);
+  try {
+    // First verify that the user is part of this order
+    const order = await prisma.order.findUnique({
+      where: { order_id: parseInt(orderId) },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Verify user is either the maker or taker of the order
+    if (order.customer_id !== userId && order.taker_customer_id !== userId) {
+      return res.status(403).json({ error: 'Not authorized to rate this order' });
+    }
+
+    // Determine if the rater is the maker or taker
+    const isMaker = order.customer_id === userId;
+    const rated_user_id = isMaker ? order.taker_customer_id : order.customer_id;
+
+    // Check if this user has already rated for this order
+    const existingRating = await prisma.rating.findFirst({
+      where: {
+        order_id: parseInt(orderId),
+        rated_by_user_id: userId,
+      }
+    });
+
+    if (existingRating) {
+      return res.status(400).json({ error: 'You have already submitted a rating for this order' });
+    }
+
+    // Create the rating with the rated user information
+    const newRating = await prisma.rating.create({
+      data: {
+        order_id: parseInt(orderId),
+        rating: rating,
+        remarks: remarks,
+        rated_user_id: rated_user_id, // Add the ID of the user being rated
+        rated_by_user_id: userId,     // Add the ID of the user giving the rating
+      },
+    });
+
+    res.status(201).json({
+      message: 'Rating submitted successfully',
+      rating: newRating
+    });
+
+  } catch (error) {
+    console.error('Error creating rating:', error);
+    res.status(500).json({ error: 'Failed to create rating' });
+  }
+});
+
+// Keep the GET endpoint for fetching ratings
+app.get('/api/ratings/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  const userId = req.user.id;
 
   try {
     // Fetch orders where the user is either the customer or the taker
@@ -938,16 +994,11 @@ app.post('/api/ratings/:orderId', authenticateJWT, async (req, res) => {
         ]
       },
       include: {
-        ratings: true // Include associated ratings
+        ratings: true
       }
     });
 
-    // If no trades are found, return a 404
-    if (!trades || trades.length === 0) {
-      return res.status(404).json({ message: 'No trades found for this user' });
-    }
-
-    // Format the response to include trades and their associated reviews
+    // Format and return the response
     const response = trades.map(trade => ({
       order_id: trade.order_id,
       order_details: trade.order_details,
@@ -966,5 +1017,59 @@ app.post('/api/ratings/:orderId', authenticateJWT, async (req, res) => {
   } catch (error) {
     console.error('Error fetching user trades:', error);
     res.status(500).json({ error: 'Failed to fetch user trades' });
+  }
+});
+
+// Add this endpoint with authentication
+app.get('/api/users/ratings', authenticateJWT, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        created_at: true
+      }
+    });
+
+    // Get all ratings directly (instead of going through orders)
+    const ratings = await prisma.rating.findMany({
+      include: {
+        order: true
+      }
+    });
+
+    // Transform the data to calculate ratings per user
+    const userRatings = users.map(user => {
+      // Get only ratings where this user was rated (rated_user_id)
+      const userRatings = ratings.filter(rating => 
+        rating.rated_user_id === user.id  // This is the key change
+      );
+
+      // Calculate average rating
+      const averageRating = userRatings.length > 0
+        ? userRatings.reduce((sum, rating) => sum + rating.rating, 0) / userRatings.length
+        : null;
+
+      return {
+        id: user.id,
+        username: user.username,
+        created_at: user.created_at,
+        total_ratings: userRatings.length,
+        average_rating: averageRating ? Number(averageRating.toFixed(2)) : null,
+        ratings: userRatings.map(rating => ({
+          rating: rating.rating,
+          remarks: rating.remarks,
+          created_at: rating.created_at
+        }))
+      };
+    });
+
+    // Filter out users with no ratings
+    const usersWithRatings = userRatings.filter(user => user.total_ratings > 0);
+
+    res.status(200).json(usersWithRatings);
+  } catch (error) {
+    console.error('Error fetching user ratings:', error);
+    res.status(500).json({ error: 'Failed to fetch user ratings' });
   }
 });
