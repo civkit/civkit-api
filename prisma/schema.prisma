@@ -8,13 +8,14 @@ datasource db {
 }
 
 model User {
-  id            Int       @id @default(autoincrement())
-  username      String    @unique
-  password      String
-  created_at    DateTime? @default(now())
-  invoice       String?
-  status        String?
-  payment_hash  String?
+  id           Int       @id @default(autoincrement())
+  username     String    @unique
+  created_at   DateTime? @default(now())
+  invoice      String?
+  status       String?
+  payment_hash String?
+  password     String
+
   @@map("users")
 }
 
@@ -44,27 +45,29 @@ model Invoice {
   invoice_type String?
   user_type    String?
 
-  @@map("invoices")
   @@unique([order_id, user_type, invoice_type, status], name: "unique_active_invoice")
-
+  @@map("invoices")
 }
 
 model Order {
-  order_id          Int       @id @default(autoincrement())
-  customer_id       Int?
-  order_details     String?
-  amount_msat       Int?
-  currency          String
-  payment_method    String?
-  status            String?   @default("pending")
-  created_at        DateTime? @default(now())
-  escrow_status     String?   @default("pending")
-  type              Int?      @db.SmallInt
-  premium           Decimal?  @default(0.00)
-  taker_customer_id Int?
-  chats             Chat[]
-  payouts           Payout[]
-  ratings           Rating[]
+  order_id            Int       @id @default(autoincrement())
+  customer_id         Int?
+  order_details       String?
+  amount_msat         Int?
+  currency            String
+  payment_method      String?
+  status              String?   @default("pending")
+  created_at          DateTime? @default(now())
+  escrow_status       String?   @default("pending")
+  type                Int?      @db.SmallInt
+  premium             Decimal?  @default(0.00)
+  taker_customer_id   Int?
+  escrow_address      String?
+  use_on_chain_escrow Boolean?  @default(false)
+  escrow_amount       Decimal?
+  chats               Chat[]
+  payouts             Payout[]
+  ratings             Rating[]
 
   @@map("orders")
 }
@@ -95,13 +98,15 @@ model Payout {
 }
 
 model Rating {
-  rating_id Int      @id @default(autoincrement())
-  order_id  Int
-  rating    Int
-  remarks   String?
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-  order     Order    @relation(fields: [order_id], references: [order_id])
+  rating_id        Int      @id @default(autoincrement())
+  order_id         Int
+  rating           Int
+  remarks          String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+  rated_user_id    Int?     // Added field
+  rated_by_user_id Int?     // Added field
+  order            Order    @relation(fields: [order_id], references: [order_id])
 
   @@map("ratings")
 }
