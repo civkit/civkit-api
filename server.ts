@@ -1073,3 +1073,43 @@ app.get('/api/users/ratings', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch user ratings' });
   }
 });
+
+
+app.post('/api/complete-trade/:orderId', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  const userId = req.user.id;
+
+  try {
+    // First verify user has access to this order
+    const order = await prisma.order.findUnique({
+      where: { order_id: parseInt(orderId) }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Verify user is part of this trade
+    if (order.customer_id !== userId && order.taker_customer_id !== userId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Update order status
+    const updatedOrder = await prisma.order.update({
+      where: { order_id: parseInt(orderId) },
+      data: { 
+        status: 'completed',
+        escrow_status: 'released'
+      }
+    });
+
+    res.status(200).json({
+      message: 'Trade completed successfully',
+      order: updatedOrder
+    });
+
+  } catch (error) {
+    console.error('Error completing trade:', error);
+    res.status(500).json({ error: 'Failed to complete trade' });
+  }
+});
