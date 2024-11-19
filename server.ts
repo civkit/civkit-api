@@ -55,18 +55,23 @@ const agent = new https.Agent({
 
 app.use(express.json());
 
-const allowedOrigins = ['*'];
+const allowedOrigins = [
+  'https://frontend.civkit.africa',
+  'http://frontend.civkit.africa',
+  'https://chat.civkit.africa',
+  'https://ln.civkit.africa',
+  'https://api.civkit.africa',
+  'http://localhost:3000'
+];
 
 app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes('*')) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
-  credentials: true
+  origin: allowedOrigins,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Length', 'Content-Type'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
 app.options('*', cors());
