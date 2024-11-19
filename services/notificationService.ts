@@ -1,5 +1,4 @@
 import { Server } from 'socket.io';
-import { PrismaClient } from '@prisma/client';
 
 export class NotificationServer {
   private io: Server;
@@ -7,63 +6,48 @@ export class NotificationServer {
 
   constructor(io: Server) {
     this.io = io;
-    this.setupSocketHandlers();
-  }
 
-  private setupSocketHandlers() {
     this.io.on('connection', (socket) => {
+      console.log('Client connected');
+      
+      // Client sends their user ID when connecting
       socket.on('register', (userId: number) => {
-        this.userSockets.set(userId, socket.id);
+        const userSockets = this.userSockets.get(userId) || [];
+        userSockets.push(socket.id);
+        this.userSockets.set(userId, userSockets);
+        console.log(`User ${userId} registered with socket ${socket.id}`);
       });
 
       socket.on('disconnect', () => {
-        for (const [userId, socketId] of this.userSockets.entries()) {
-          if (socketId === socket.id) this.userSockets.delete(userId);
-        }
+        // Clean up disconnected sockets
+        this.userSockets.forEach((sockets, userId) => {
+          const remaining = sockets.filter(id => id !== socket.id);
+          if (remaining.length) {
+            this.userSockets.set(userId, remaining);
+          } else {
+            this.userSockets.delete(userId);
+          }
+        });
       });
     });
   }
 
-  async notifyTaker(orderId: number, takerId: number) {
-    const socketId = this.userSockets.get(takerId);
-    if (socketId) {
-      this.io.to(socketId).emit('chatReady', {
-        orderId,
-        message: 'Chat room is ready to join'
+  // Method to send notification to a specific user
+  async notifyUser(userId: number, message: any) {
+    const userSockets = this.userSockets.get(userId);
+    if (userSockets) {
+      userSockets.forEach(socketId => {
+        this.io.to(socketId).emit('notification', message);
       });
     }
   }
 
-  public async notifyAcceptOfferReady(orderId: number) {
-    try {
-      // Get the order to find both maker and taker
-      const order = await prisma.order.findUnique({
-        where: { order_id: orderId },
-        include: {
-          chats: true
-        }
-      });
-
-      if (!order || !order.chats[0]?.accept_offer_url) {
-        console.error('No accept offer URL found for order:', orderId);
-        return;
-      }
-
-      // Notify both maker and taker
-      const userIds = [order.customer_id, order.taker_customer_id].filter(Boolean);
-      
-      userIds.forEach(userId => {
-        if (userId) {
-          this.sendNotification(userId, {
-            type: 'ACCEPT_OFFER_READY',
-            orderId: order.order_id,
-            acceptOfferUrl: order.chats[0].accept_offer_url,
-            message: 'Accept offer URL is now available'
-          });
-        }
-      });
-    } catch (error) {
-      console.error('Error sending accept offer notification:', error);
-    }
+  // Your existing method
+  async notifyTaker(orderId: number, takerId: number) {
+    await this.notifyUser(takerId, {
+      type: 'make-offer',
+      orderId: orderId,
+      message: 'New offer available'
+    });
   }
 }

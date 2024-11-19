@@ -317,6 +317,9 @@ app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
 app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => {
   const { orderId } = req.body;
   const userId = req.user.id;
+  
+  console.log(`[Notifications] Checking chatroom for order ${orderId}`);
+  
   try {
     const order = await prisma.order.findUnique({
       where: { order_id: orderId },
@@ -324,63 +327,41 @@ app.post('/api/check-and-create-chatroom', authenticateJWT, async (req, res) => 
     });
 
     if (!order) {
+      console.log(`[Notifications] Order ${orderId} not found`);
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const isMaker = order.customer_id === userId;
-    const isTaker = order.taker_customer_id === userId;
+    // After chatroom is created and accept-offer URL is generated
+    const result = await checkAndCreateChatroom(orderId);
+    console.log(`[Notifications] Chatroom created with result:`, result);
 
-    if (!isMaker && !isTaker) {
-      return res.status(403).json({ error: 'Unauthorized access to this order' });
-    }
-
-    let chat = order.chats[0];
-
-    if (!chat) {
-      // Create a new chat if one doesn't exist
-      const makeOfferUrl = `http://localhost:3456/ui/chat/make-offer?orderId=${orderId}`;
+    if (result.acceptOfferUrl) {
+      console.log(`[Notifications] Accept-offer URL available for order ${orderId}`);
       
-      // Make a request to the chat app to create the make offer URL
-      const chatAppResponse = await axios.post(
-        `${process.env.CHAT_APP_URL}/api/chat/make-offer`,
-        { orderId },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            // Add any necessary authentication headers for the chat app
-          }
-        }
-      );
-
-      if (!chatAppResponse.data || !chatAppResponse.data.token) {
-        throw new Error('Failed to create make offer URL in chat app');
-      }
-
-      const chatToken = chatAppResponse.data.token;
-      const chatRoomUrl = `https://chat.civkit.africa/ui/chat/room/${chatToken}`;
-
-      chat = await prisma.chat.create({
-        data: {
-          order_id: orderId,
-          chatroom_url: chatRoomUrl,
-          make_offer_url: makeOfferUrl,
-          chat_token: chatToken,
-          // We'll set accept_offer_url later when the maker hits the make-offer endpoint
-          accept_offer_url: null
-        }
+      // Notify both maker and taker
+      await notificationServer.notifyUser(order.customer_id, {
+        type: 'accept-offer-url',
+        orderId: orderId,
+        url: result.acceptOfferUrl,
+        message: 'Accept offer URL is now available'
       });
+      
+      if (order.taker_customer_id) {
+        await notificationServer.notifyUser(order.taker_customer_id, {
+          type: 'accept-offer-url',
+          orderId: orderId,
+          url: result.acceptOfferUrl,
+          message: 'Accept offer URL is now available'
+        });
+      }
+      
+      console.log(`[Notifications] Notifications sent to maker ${order.customer_id} and taker ${order.taker_customer_id}`);
     }
 
-    const responseData = {
-      makeOfferUrl: chat.make_offer_url,
-      acceptOfferUrl: isTaker ? chat.accept_offer_url : null,
-      userRole: isMaker ? 'maker' : 'taker'
-    };
-
-    res.status(200).json(responseData);
+    res.json(result);
   } catch (error) {
-    console.error('[/api/check-and-create-chatroom] Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('[Notifications] Error:', error);
+    res.status(500).json({ error: 'Failed to process request' });
   }
 });
 
