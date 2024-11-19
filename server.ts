@@ -42,7 +42,7 @@ const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
 const RUNE = process.env.RUNE;
 
 console.log('LIGHTNING_NODE_API_URL:', LIGHTNING_NODE_API_URL);
-console.log('RUNE:', RUNE);
+// console.log('RUNE:', RUNE);  // Comment out sensitive data
 
 if (!LIGHTNING_NODE_API_URL || !RUNE) {
   console.error('Missing required environment variables. Please check your .env file.');
@@ -68,6 +68,8 @@ app.use(cors({
   },
   credentials: true
 }));
+
+app.options('*', cors());
 
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
