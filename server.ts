@@ -55,26 +55,34 @@ const agent = new https.Agent({
 
 app.use(express.json());
 
+const isDev = process.env.NODE_ENV !== 'production';
+
 const allowedOrigins = [
   'https://frontend.civkit.africa',
   'http://frontend.civkit.africa',
   'https://chat.civkit.africa',
   'https://ln.civkit.africa',
   'https://api.civkit.africa',
-  'http://localhost:3000'
+  'http://localhost:3000',
+  'http://localhost:3001'
 ];
 
 app.use(cors({
-  origin: allowedOrigins,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Content-Length', 'Content-Type'],
+  origin: isDev ? true : allowedOrigins,
   credentials: true,
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
+  exposedHeaders: ['Content-Length', 'Content-Type']
 }));
 
 app.options('*', cors());
+
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log('Origin:', req.headers.origin);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  next();
+});
 
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
@@ -110,20 +118,31 @@ setInterval(async () => {
 
 // User Login
 app.post('/api/login', async (req, res) => {
+  console.log('Login request received:', {
+    headers: req.headers,
+    body: req.body
+  });
+  
   try {
     const { username, password } = req.body;
 
-    const user = await authenticateUser(username, password);
+    if (!username || !password) {
+      console.log('Missing username or password');
+      return res.status(400).json({ message: 'Username and password are required' });
+    }
 
-    // Check if the user's registration status is complete
+    const user = await authenticateUser(username, password);
+    console.log('User authenticated:', user.id);
+
     if (user.status !== 'complete') {
-      return res.status(403).json({ message: 'Registration not complete. Please complete the registration process.' });
+      console.log('Registration not complete for user:', user.id);
+      return res.status(403).json({ message: 'Registration not complete' });
     }
 
     const token = generateToken(user);
     res.json({ token });
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
+    console.error('Login error:', error);
     res.status(401).json({ message: 'Login failed', error: error.message });
   }
 });
