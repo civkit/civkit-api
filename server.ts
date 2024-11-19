@@ -1113,3 +1113,26 @@ app.post('/api/complete-trade/:orderId', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: 'Failed to complete trade' });
   }
 });
+
+// Add this new endpoint
+app.get('/api/user-npub/:userId', authenticateJWT, async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(userId) },
+      select: {
+        id: true,
+        username: true  // username is actually the npub
+      }
+    });
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({ npub: user.username }); // Return username as npub
+  } catch (error) {
+    console.error('Error fetching user npub:', error);
+    res.status(500).json({ error: 'Failed to fetch user npub' });
+  }
+});
