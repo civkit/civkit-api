@@ -1,9 +1,17 @@
 # .github/workflows/deploy-api.yml
-name: Deploy API to Production
+name: Deploy API
 
 on:
   push:
-    branches: [ main ]
+    branches: 
+      - main
+      - 'feature/**'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'main'
 
 jobs:
   deploy:
@@ -17,25 +25,41 @@ jobs:
         username: ${{ secrets.DEPLOY_USER }}
         key: ${{ secrets.DEPLOY_KEY }}
         script: |
-          echo "Starting API deployment..."
+          echo "Starting deployment of ${{ github.ref_name }}..."
           
           # Stop the API service
-          echo "Stopping API service..."
           systemctl stop civkit-api.service
           
           cd /root/civkit-api
           
-          echo "Pulling latest changes..."
-          git pull origin main # Will fail if there are issues
+          # Fetch all branches and tags
+          git fetch --all --prune --tags --force
+          
+          # Save current changes
+          git stash
+          
+          # Force clean state
+          git reset --hard HEAD
+          git clean -fd
+          
+          # Checkout and update main first
+          git checkout main
+          git reset --hard origin/main
+          git pull origin main --force
+          
+          # If deploying feature branch
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "Deploying feature branch: ${{ github.ref_name }}"
+            git fetch origin ${GITHUB_REF#refs/heads/}:${GITHUB_REF#refs/heads/} --force
+            git checkout ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+          fi
           
           # Clear caches but preserve node_modules
           rm -rf dist tsconfig.tsbuildinfo
           
-          echo "Building API..."
           npm run build || echo "Build had issues but continuing..."
           
-          # Start service with correct name and command
-          echo "Starting API service..."
           systemctl start civkit-api.service
           
           echo "API Deployment completed!"
