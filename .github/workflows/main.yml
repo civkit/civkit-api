@@ -28,6 +28,9 @@ jobs:
           echo "Pulling latest changes..."
           git pull origin main # Will fail if there are issues
           
+          # Clear caches but preserve node_modules
+          rm -rf dist tsconfig.tsbuildinfo
+          
           echo "Building API..."
           npm run build || echo "Build had issues but continuing..."
           

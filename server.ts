@@ -28,6 +28,9 @@ import axios from 'axios';
 import https from 'node:https';
 import { announceCivKitNode } from './utils/nostrAnnouncements.js';
 import { createPayout } from './services/payoutService.js';
+import { Server } from 'socket.io';
+import { createServer } from 'http';
+import { NotificationServer } from './services/notificationService';
 
 dotenv.config();
 
@@ -240,20 +243,12 @@ app.post('/api/settle-holdinvoices-by-order', authenticateJWT, async (req, res) 
 // Initialize NDK and create identity
 async function startServer() {
   try {
-    app.listen(PORT,  () => {
+    httpServer.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       announceCivKitNode()
         .then(() => console.log('CivKit node announced successfully'))
         .catch(error => console.error('Failed to announce CivKit node:', error));
     });
-
-    // Announce every 24 hours
-    setInterval(() => {
-      announceCivKitNode()
-        .then(() => console.log('CivKit node announced successfully'))
-        .catch(error => console.error('Failed to announce CivKit node:', error));
-    }, 24 * 60 * 60 * 1000);
-
   } catch (error) {
     console.error('Failed to start server:', error);
   }
@@ -849,38 +844,32 @@ app.post('/api/taker-full-invoice/:orderId', authenticateJWT, async (req, res) =
   }
 });
 
-// Remove the authenticateJWT middleware
+// Create HTTP server
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: process.env.FRONTEND_URL }
+});
+const notificationServer = new NotificationServer(io);
+
+// Modify existing create-make-offer endpoint
 app.post('/api/create-make-offer', async (req, res) => {
   const { orderId } = req.body;
-  
-  console.log('Received request to create make-offer for orderId:', orderId);
-
-  if (!orderId) {
-    console.error('Order ID is missing in the request');
-    return res.status(400).json({ error: 'Order ID is required' });
-  }
-
   try {
     const order = await prisma.order.findUnique({
       where: { order_id: parseInt(orderId) },
       include: { chats: true }
     });
 
-    console.log('Found order:', order);
-
-    if (!order) {
-      console.error(`Order not found for ID: ${orderId}`);
-      return res.status(404).json({ error: 'Order not found' });
+    if (!order?.taker_customer_id) {
+      return res.status(404).json({ error: 'Order or taker not found' });
     }
 
-    // Construct the make-offer URL
-    const makeOfferUrl = `http://localhost:3456/ui/chat/make-offer?orderId=${order.order_id}`;
+    const makeOfferUrl = `${process.env.CHAT_APP_URL}/ui/chat/make-offer?orderId=${order.order_id}`;
+    
+    await notificationServer.notifyTaker(order.order_id, order.taker_customer_id);
 
-    // Return the complete URL
     res.json({ makeOfferUrl });
-
   } catch (error) {
-    console.error('Error processing make-offer request:', error);
     res.status(500).json({ error: 'Failed to process make-offer request' });
   }
 });

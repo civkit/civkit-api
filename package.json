@@ -34,6 +34,7 @@
     "openpgp": "^5.11.1",
     "pg": "^8.11.5",
     "qrcode.react": "^4.0.1",
+    "socket.io": "^4.8.1",
     "websocket-polyfill": "^1.0.0"
   },
   "devDependencies": {
