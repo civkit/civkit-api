@@ -55,18 +55,18 @@ const agent = new https.Agent({
 
 app.use(express.json());
 
-const isDev = process.env.NODE_ENV !== 'production';
-
-const allowedOrigins = [
-'*'
-];
+const allowedOrigins = ['*'];
 
 app.use(cors({
-  origin: isDev ? true : allowedOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
-  exposedHeaders: ['Content-Length', 'Content-Type']
+  origin: function(origin, callback) {
+    if (!origin || allowedOrigins.includes('*')) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
 }));
 
 app.options('*', cors());
@@ -277,8 +277,9 @@ async function startServer() {
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: '*',
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 const notificationServer = new NotificationServer(io);
