@@ -1,14 +1,21 @@
-# .github/workflows/deploy-api.yml
-name: Deploy API to Production
+name: Deploy API
 
 on:
   push:
-    branches: [ main ]
+    branches: 
+      - main
+      - 'feature/**'
+  workflow_dispatch:  # This enables manual runs
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        type: string
+        required: true
+        default: 'main'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
     steps:
     - name: Deploy to Server
       uses: appleboy/ssh-action@master
@@ -17,22 +24,12 @@ jobs:
         username: ${{ secrets.DEPLOY_USER }}
         key: ${{ secrets.DEPLOY_KEY }}
         script: |
-          echo "Starting API deployment..."
-          
-          # Stop the API service
-          echo "Stopping API service..."
+          echo "Starting deployment..."
           systemctl stop civkit-api.service
-          
           cd /root/civkit-api
-          
-          echo "Pulling latest changes..."
-          git pull origin main # Will fail if there are issues
-          
-          echo "Building API..."
-          npm run build || echo "Build had issues but continuing..."
-          
-          # Start service with correct name and command
-          echo "Starting API service..."
+          git fetch origin
+          git checkout ${{ github.event.inputs.branch || github.ref_name }}
+          git pull origin ${{ github.event.inputs.branch || github.ref_name }}
+          npm install
+          npm run build
           systemctl start civkit-api.service
-          
-          echo "API Deployment completed!"
