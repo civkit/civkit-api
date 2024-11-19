@@ -1122,7 +1122,7 @@ app.get('/api/user-npub/:userId', authenticateJWT, async (req, res) => {
       where: { id: parseInt(userId) },
       select: {
         id: true,
-        npub: true  // Assuming npub is stored in User model
+        username: true  // username is actually the npub
       }
     });
     
@@ -1130,7 +1130,7 @@ app.get('/api/user-npub/:userId', authenticateJWT, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    res.json({ npub: user.npub });
+    res.json({ npub: user.username }); // Return username as npub
   } catch (error) {
     console.error('Error fetching user npub:', error);
     res.status(500).json({ error: 'Failed to fetch user npub' });
