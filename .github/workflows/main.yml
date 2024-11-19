@@ -25,7 +25,11 @@ jobs:
         username: ${{ secrets.DEPLOY_USER }}
         key: ${{ secrets.DEPLOY_KEY }}
         script: |
-          echo "Starting deployment of ${{ github.ref_name }}..."
+          echo "Starting deployment..."
+          
+          # Determine which branch to deploy
+          DEPLOY_BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
+          echo "Deploying branch: $DEPLOY_BRANCH"
           
           # Stop the API service
           systemctl stop civkit-api.service
@@ -42,23 +46,21 @@ jobs:
           git reset --hard HEAD
           git clean -fd
           
-          # Checkout and update main first
-          git checkout main
-          git reset --hard origin/main
-          git pull origin main --force
-          
-          # If deploying feature branch
-          if [ "${{ github.ref_name }}" != "main" ]; then
-            echo "Deploying feature branch: ${{ github.ref_name }}"
-            git fetch origin ${GITHUB_REF#refs/heads/}:${GITHUB_REF#refs/heads/} --force
-            git checkout ${{ github.ref_name }}
-            git reset --hard origin/${{ github.ref_name }}
-          fi
+          # Checkout and update the specified branch
+          git checkout $DEPLOY_BRANCH
+          git reset --hard origin/$DEPLOY_BRANCH
+          git pull origin $DEPLOY_BRANCH --force
           
           # Clear caches but preserve node_modules
           rm -rf dist tsconfig.tsbuildinfo
           
-          npm run build || echo "Build had issues but continuing..."
+          # Proper build check
+          npm install
+          npm run build
+          if [ $? -ne 0 ]; then
+              echo "Build failed! Not starting service."
+              exit 1
+          fi
           
           systemctl start civkit-api.service
           
