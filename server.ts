@@ -58,13 +58,7 @@ app.use(express.json());
 const isDev = process.env.NODE_ENV !== 'production';
 
 const allowedOrigins = [
-  'https://frontend.civkit.africa',
-  'http://frontend.civkit.africa',
-  'https://chat.civkit.africa',
-  'https://ln.civkit.africa',
-  'https://api.civkit.africa',
-  'http://localhost:3000',
-  'http://localhost:3001'
+'*'
 ];
 
 app.use(cors({

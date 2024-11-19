@@ -78,7 +78,18 @@ export async function updateAcceptOfferUrl(chatId: number, acceptOfferUrl: strin
       data: { accept_offer_url: acceptOfferUrl }
     });
 
-    console.log(`[updateAcceptOfferUrl] Chat updated`, updatedChat);
+    // Get the order ID to notify users
+    const chat = await prisma.chat.findUnique({
+      where: { chat_id: chatId },
+      select: { order_id: true }
+    });
+
+    if (chat) {
+      // Notify users that accept offer URL is ready
+      await notificationServer.notifyAcceptOfferReady(chat.order_id);
+    }
+
+    console.log(`[updateAcceptOfferUrl] Chat updated and notifications sent`, updatedChat);
     return updatedChat;
   } catch (error) {
     console.error(`[updateAcceptOfferUrl] Error updating accept offer URL for Chat ID ${chatId}:`, error);
