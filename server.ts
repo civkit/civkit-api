@@ -277,31 +277,32 @@ async function startServer() {
 const WS_PORT = 3002;
 const wsServer = new Server({
   cors: {
-    origin: function(origin, callback) {
-      if (!origin || allowedOrigins.includes('*')) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) === -1) {
-        var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-        return callback(new Error(msg), false);
-      }
-      return callback(null, true);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'OPTIONS']
-  }
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: '*',
+    credentials: true
+  },
+  allowEIO3: true,
+  transports: ['websocket', 'polling']
 });
 
-// Add CORS preflight for WebSocket
-wsServer.engine.on('headers', (headers: any) => {
+// Force allow all connections
+wsServer.engine.on('connection', (socket) => {
+  socket.handshake.headers.origin = '*';
+});
+
+// Force headers to allow everything
+wsServer.engine.on('headers', (headers) => {
   headers['Access-Control-Allow-Origin'] = '*';
-  headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
-  headers['Access-Control-Allow-Headers'] = 'Content-Type';
-  headers['Access-Control-Allow-Credentials'] = true;
+  headers['Access-Control-Allow-Methods'] = '*';
+  headers['Access-Control-Allow-Headers'] = '*';
+  headers['Access-Control-Allow-Credentials'] = 'true';
 });
 
 wsServer.listen(WS_PORT);
 const notificationServer = new NotificationServer(wsServer);
 
-console.log(`WebSocket server running on port ${WS_PORT}`);
+console.log(`WebSocket server running on port ${WS_PORT} with all CORS restrictions disabled`);
 
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
