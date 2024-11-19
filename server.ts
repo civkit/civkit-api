@@ -30,7 +30,7 @@ import { announceCivKitNode } from './utils/nostrAnnouncements.js';
 import { createPayout } from './services/payoutService.js';
 import { Server } from 'socket.io';
 import { createServer } from 'http';
-import { NotificationServer } from './services/notificationService';
+import { NotificationServer } from './services/notificationService.js';
 
 dotenv.config();
 
