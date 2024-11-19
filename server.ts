@@ -274,15 +274,18 @@ async function startServer() {
   }
 }
 
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
+const WS_PORT = 3002;
+const wsServer = new Server({
   cors: {
     origin: '*',
-    methods: ['GET', 'POST'],
-    credentials: true
+    methods: ['GET', 'POST']
   }
 });
-const notificationServer = new NotificationServer(io);
+
+wsServer.listen(WS_PORT);
+const notificationServer = new NotificationServer(wsServer);
+
+console.log(`WebSocket server running on port ${WS_PORT}`);
 
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
@@ -1123,17 +1126,3 @@ app.post('/api/complete-trade/:orderId', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: 'Failed to complete trade' });
   }
 });
-
-// Add WebSocket server on port 3002
-const WS_PORT = 3002;
-const wsServer = new Server({
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
-});
-
-wsServer.listen(WS_PORT);
-const notificationServer = new NotificationServer(wsServer);
-
-console.log(`WebSocket server running on port ${WS_PORT}`);
