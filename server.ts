@@ -254,7 +254,14 @@ async function startServer() {
   }
 }
 
-startServer();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+const notificationServer = new NotificationServer(io);
 
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
@@ -843,13 +850,6 @@ app.post('/api/taker-full-invoice/:orderId', authenticateJWT, async (req, res) =
     res.status(500).json({ error: 'Failed to create taker full invoice' });
   }
 });
-
-// Create HTTP server
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: { origin: process.env.FRONTEND_URL }
-});
-const notificationServer = new NotificationServer(io);
 
 // Modify existing create-make-offer endpoint
 app.post('/api/create-make-offer', async (req, res) => {
