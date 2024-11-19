@@ -26,9 +26,10 @@ jobs:
         username: ${{ secrets.DEPLOY_USER }}
         key: ${{ secrets.DEPLOY_KEY }}
         script: |
-          echo "Starting deployment..."
+          echo "Starting API deployment..."
           
-          # Stop the API service
+          # Stop both services
+          systemctl stop frontend.service
           systemctl stop civkit-api.service
           
           cd /root/civkit-api
@@ -62,6 +63,16 @@ jobs:
           npm install
           npm run build || echo "Build had issues but continuing..."
           
+          # Start API first
           systemctl start civkit-api.service
+          sleep 5  # Give API time to fully start
+          
+          # Then start frontend
+          systemctl start frontend.service
+          
+          # Log status of both services
+          echo "Service statuses:"
+          systemctl status civkit-api.service --no-pager
+          systemctl status frontend.service --no-pager
           
           echo "API Deployment completed!"
