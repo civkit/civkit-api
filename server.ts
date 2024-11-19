@@ -277,9 +277,25 @@ async function startServer() {
 const WS_PORT = 3002;
 const wsServer = new Server({
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: function(origin, callback) {
+      if (!origin || allowedOrigins.includes('*')) return callback(null, true);
+      if (allowedOrigins.indexOf(origin) === -1) {
+        var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'OPTIONS']
   }
+});
+
+// Add CORS preflight for WebSocket
+wsServer.engine.on('headers', (headers: any) => {
+  headers['Access-Control-Allow-Origin'] = '*';
+  headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
+  headers['Access-Control-Allow-Headers'] = 'Content-Type';
+  headers['Access-Control-Allow-Credentials'] = true;
 });
 
 wsServer.listen(WS_PORT);
