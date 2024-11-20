@@ -102,18 +102,13 @@ setInterval(async () => {
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-
     const user = await authenticateUser(username, password);
-
-    // Check if the user's registration status is complete
-    if (user.status !== 'complete') {
-      return res.status(403).json({ message: 'Registration not complete. Please complete the registration process.' });
-    }
-
     const token = generateToken(user);
-    res.json({ token });
+    res.json({ 
+      token,
+      userId: user.id
+    });
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(401).json({ message: 'Login failed', error: error.message });
   }
 });
