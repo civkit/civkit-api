@@ -1131,3 +1131,28 @@ app.get('/api/user-npub/:userId', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch user npub' });
   }
 });
+
+app.get('/api/orders/:orderId/user-role', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  const userId = req.user.id;
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { order_id: parseInt(orderId) }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const role = {
+      isMaker: order.customer_id === userId,
+      isTaker: order.taker_customer_id === userId,
+      userId: userId
+    };
+
+    res.json(role);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to determine user role' });
+  }
+});
