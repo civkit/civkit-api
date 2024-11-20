@@ -1145,14 +1145,43 @@ app.get('/api/orders/:orderId/user-role', authenticateJWT, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const role = {
-      isMaker: order.customer_id === userId,
-      isTaker: order.taker_customer_id === userId,
-      userId: userId
-    };
+    // If taker_customer_id is null and user is the customer (maker), they're the maker
+    const isMaker = parseInt(order.customer_id) === parseInt(userId);
+    
+    // Only check taker if there is a taker_customer_id
+    const isTaker = order.taker_customer_id !== null && 
+                   parseInt(order.taker_customer_id) === parseInt(userId);
 
-    res.json(role);
+    console.log('Role Check:', {
+      orderId: parseInt(orderId),
+      userId: parseInt(userId),
+      customer_id: order.customer_id,
+      taker_customer_id: order.taker_customer_id,
+      isMaker,
+      isTaker
+    });
+
+    // If there's no taker and this user is the customer, they must be the maker
+    if (order.taker_customer_id === null && isMaker) {
+      return res.json({
+        isMaker: true,
+        isTaker: false,
+        userId: parseInt(userId),
+        orderId: parseInt(orderId)
+      });
+    }
+
+    res.json({
+      isMaker,
+      isTaker,
+      userId: parseInt(userId),
+      orderId: parseInt(orderId)
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to determine user role' });
+    console.error('Role determination error:', error);
+    res.status(500).json({ 
+      error: 'Failed to determine user role',
+      details: error.message 
+    });
   }
 });
