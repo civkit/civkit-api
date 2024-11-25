@@ -674,20 +674,28 @@ app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) =
     console.log('Found invoice:', invoice);
 
     // Check status on Lightning node
+    console.log('Checking lightning node with payment_hash:', invoice.payment_hash);
     const nodeResponse = await axios.post(
       `${LIGHTNING_NODE_API_URL}/v1/listinvoices`,
       { payment_hash: invoice.payment_hash },
       {
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${RUNE}`
+          'Rune': RUNE
         }
       }
     );
 
-    console.log('Lightning node response:', nodeResponse.data);
+    console.log('Lightning node raw response:', nodeResponse.data);
+
+    if (!nodeResponse.data.invoices || nodeResponse.data.invoices.length === 0) {
+      console.log('No invoice found on lightning node');
+      return res.status(404).json({ error: 'Invoice not found on lightning node' });
+    }
 
     const nodeInvoice = nodeResponse.data.invoices[0];
+    console.log('Node invoice status:', nodeInvoice.status);
+    
     const newStatus = nodeInvoice.status;
 
     // If status has changed, update in database
@@ -697,6 +705,15 @@ app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) =
         where: { invoice_id: invoice.invoice_id },
         data: { status: newStatus }
       });
+
+      // Also update order status if paid
+      if (newStatus === 'paid') {
+        console.log('Updating order status to paid');
+        await prisma.order.update({
+          where: { order_id: parseInt(orderId) },
+          data: { status: 'paid' }
+        });
+      }
     }
 
     // Send back the current status
