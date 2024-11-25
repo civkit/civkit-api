@@ -716,7 +716,7 @@ app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) =
       }
     }
 
-    // Send back the current status
+    // Send back the current status and full invoice data
     res.json({ 
       status: newStatus,
       invoice: {
