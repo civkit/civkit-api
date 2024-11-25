@@ -102,18 +102,13 @@ setInterval(async () => {
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-
     const user = await authenticateUser(username, password);
-
-    // Check if the user's registration status is complete
-    if (user.status !== 'complete') {
-      return res.status(403).json({ message: 'Registration not complete. Please complete the registration process.' });
-    }
-
     const token = generateToken(user);
-    res.json({ token });
+    res.json({ 
+      token,
+      userId: user.id
+    });
   } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
     res.status(401).json({ message: 'Login failed', error: error.message });
   }
 });
@@ -1134,5 +1129,59 @@ app.get('/api/user-npub/:userId', authenticateJWT, async (req, res) => {
   } catch (error) {
     console.error('Error fetching user npub:', error);
     res.status(500).json({ error: 'Failed to fetch user npub' });
+  }
+});
+
+app.get('/api/orders/:orderId/user-role', authenticateJWT, async (req, res) => {
+  const { orderId } = req.params;
+  const userId = req.user.id;
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { order_id: parseInt(orderId) }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // If taker_customer_id is null and user is the customer (maker), they're the maker
+    const isMaker = parseInt(order.customer_id) === parseInt(userId);
+    
+    // Only check taker if there is a taker_customer_id
+    const isTaker = order.taker_customer_id !== null && 
+                   parseInt(order.taker_customer_id) === parseInt(userId);
+
+    console.log('Role Check:', {
+      orderId: parseInt(orderId),
+      userId: parseInt(userId),
+      customer_id: order.customer_id,
+      taker_customer_id: order.taker_customer_id,
+      isMaker,
+      isTaker
+    });
+
+    // If there's no taker and this user is the customer, they must be the maker
+    if (order.taker_customer_id === null && isMaker) {
+      return res.json({
+        isMaker: true,
+        isTaker: false,
+        userId: parseInt(userId),
+        orderId: parseInt(orderId)
+      });
+    }
+
+    res.json({
+      isMaker,
+      isTaker,
+      userId: parseInt(userId),
+      orderId: parseInt(orderId)
+    });
+  } catch (error) {
+    console.error('Role determination error:', error);
+    res.status(500).json({ 
+      error: 'Failed to determine user role',
+      details: error.message 
+    });
   }
 });
