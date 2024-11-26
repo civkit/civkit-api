@@ -563,7 +563,7 @@ app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
 });
 
 export async function createTakerHoldInvoice(orderId: number, amount_msat: number, description: string) {
-  console.log(` [createTakerHoldInvoice] Starting for orderId: ${orderId}`);
+  //console.log(` [createTakerHoldInvoice] Starting for orderId: ${orderId}`);
 
   // Add this line to calculate 5%
   const holdAmount = Math.floor(amount_msat * 0.05);

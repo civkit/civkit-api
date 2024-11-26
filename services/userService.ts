@@ -218,7 +218,7 @@ export const pollAndCompleteRegistration = async () => {
       select: { id: true, username: true, payment_hash: true, created_at: true }
     });
 
-    console.log(`Checking ${pendingUsers.length} pending users`);
+    //console.log(`Checking ${pendingUsers.length} pending users`);
 
     for (const user of pendingUsers) {
       try {
