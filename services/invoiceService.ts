@@ -702,21 +702,27 @@ async function fullInvoiceLookup(paymentHash: string) {
     }
 
     const { invoices } = await response.json();
-    console.log('Lightning node response:', invoices);
-    
     const invoice = invoices.find(inv => inv.payment_hash === paymentHash);
     
     if (!invoice) {
       throw new Error('Invoice not found');
     }
+
+    // First find the invoice in our database
+    const dbInvoice = await prisma.invoice.findFirst({
+      where: { payment_hash: paymentHash }
+    });
+
+    if (!dbInvoice) {
+      throw new Error('Invoice not found in database');
+    }
     
-    // Update the database if the invoice is paid
-    if (invoice.status === 'paid') {
+    // Update using invoice_id if status has changed
+    if (invoice.status === 'paid' && dbInvoice.status !== 'paid') {
       await prisma.invoice.update({
-        where: { payment_hash: paymentHash },
-        data: { status: 'paid', paid_at: new Date() },
+        where: { invoice_id: dbInvoice.invoice_id },  // Use invoice_id instead of payment_hash
+        data: { status: 'paid' }
       });
-      console.log(`Updated invoice ${paymentHash} to paid status in database`);
     }
     
     return invoice;

@@ -39,7 +39,7 @@ const LIGHTNING_NODE_API_URL = process.env.LIGHTNING_NODE_API_URL;
 const RUNE = process.env.RUNE;
 
 console.log('LIGHTNING_NODE_API_URL:', LIGHTNING_NODE_API_URL);
-console.log('RUNE:', RUNE);
+//console.log('RUNE:', RUNE);
 
 if (!LIGHTNING_NODE_API_URL || !RUNE) {
   console.error('Missing required environment variables. Please check your .env file.');
@@ -114,8 +114,8 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
-  console.log('Received request at /api/holdinvoice');
-  console.log('Request body:', req.body);
+  //console.log('Received request at /api/holdinvoice');
+  //console.log('Request body:', req.body);
   try {
     const { amount_msat, label, description } = req.body;
     console.log('Extracted values:', { amount_msat, label, description });
@@ -129,12 +129,12 @@ app.post('/api/holdinvoice', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/holdinvoicelookup', authenticateJWT, async (req, res) => {
-  console.log('[/api/holdinvoicelookup] Received request');
+  //console.log('[/api/holdinvoicelookup] Received request');
   const { payment_hash } = req.body;
-  console.log('[/api/holdinvoicelookup] Payment hash:', payment_hash);
+  //console.log('[/api/holdinvoicelookup] Payment hash:', payment_hash);
   try {
     const result = await holdInvoiceLookup(payment_hash);
-    console.log('[/api/holdinvoicelookup] Lookup result:', result);
+    //console.log('[/api/holdinvoicelookup] Lookup result:', result);
     res.json(result);
   } catch (error) {
     console.error('[/api/holdinvoicelookup] Error:', error);
@@ -258,7 +258,7 @@ startServer();
 
 app.post('/api/check-accepted-invoices', authenticateJWT, async (req, res) => {
   try {
-    // @ts-expect-error TS(2304): Cannot find name 'checkAndUpdateAcceptedInvoices'.
+
     await checkAndUpdateAcceptedInvoices();
     res.status(200).send({ message: 'Invoices checked and updated successfully.' });
   } catch (error) {
@@ -406,7 +406,7 @@ app.get('/api/invoice/:orderId', authenticateJWT, async (req, res) => {
       amount_received_msat: invoice.amount_received_msat ? invoice.amount_received_msat.toString() : null,
       created_at: invoice.created_at.toISOString(),
       expires_at: invoice.expires_at.toISOString(),
-      paid_at: invoice.paid_at ? invoice.paid_at.toISOString() : null
+      //paid_at: invoice.paid_at ? invoice.paid_at.toISOString() : null
     }));
 
     res.status(200).json(serializedInvoices);
@@ -437,7 +437,7 @@ app.get('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
       amount_received_msat: invoice.amount_received_msat ? invoice.amount_received_msat.toString() : null,
       created_at: invoice.created_at.toISOString(),
       expires_at: invoice.expires_at.toISOString(),
-      paid_at: invoice.paid_at ? invoice.paid_at.toISOString() : null
+      //paid_at: invoice.paid_at ? invoice.paid_at.toISOString() : null
     }));
 
     res.status(200).json(serializedInvoices);
@@ -525,7 +525,7 @@ app.post('/api/get-invoice', async (req, res) => {
 
 app.use('/api', submitToMainstayRoutes);
 
-console.log('Registering /api/taker-invoice/:orderId route');
+//console.log('Registering /api/taker-invoice/:orderId route');
 
 app.post('/api/taker-invoice/:orderId', authenticateJWT, async (req, res) => {
   console.log('Received request for taker invoice:', req.params.orderId);
@@ -654,84 +654,45 @@ function serializeBigInt(data: any): any {
 }
 
 app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) => {
-  const { orderId } = req.params;
   try {
-    console.log('Checking full invoice status for orderId:', orderId);
-    
-    // Get the invoice from database
+    // First find the invoice to get its ID
     const invoice = await prisma.invoice.findFirst({
       where: { 
-        order_id: parseInt(orderId),
+        order_id: parseInt(req.params.orderId),
         invoice_type: 'full'
       }
     });
 
     if (!invoice) {
-      console.log('No invoice found for orderId:', orderId);
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
-    console.log('Found invoice:', invoice);
-
-    // Check status on Lightning node
-    console.log('Checking lightning node with payment_hash:', invoice.payment_hash);
-    const nodeResponse = await axios.post(
-      `${LIGHTNING_NODE_API_URL}/v1/listinvoices`,
-      { payment_hash: invoice.payment_hash },
-      {
-        headers: { 
-          'Content-Type': 'application/json',
-          'Rune': RUNE
-        }
-      }
-    );
-
-    console.log('Lightning node raw response:', nodeResponse.data);
-
-    if (!nodeResponse.data.invoices || nodeResponse.data.invoices.length === 0) {
-      console.log('No invoice found on lightning node');
-      return res.status(404).json({ error: 'Invoice not found on lightning node' });
-    }
-
-    const nodeInvoice = nodeResponse.data.invoices[0];
-    console.log('Node invoice status:', nodeInvoice.status);
+    const nodeStatus = await fullInvoiceLookup(invoice.payment_hash);
     
-    const newStatus = nodeInvoice.status;
-
-    // If status has changed, update in database
-    if (newStatus !== invoice.status) {
-      console.log('Updating invoice status from', invoice.status, 'to', newStatus);
-      await prisma.invoice.update({
+    if (nodeStatus.status !== invoice.status) {
+      // Use invoice_id instead of payment_hash for the update
+      const updatedInvoice = await prisma.invoice.update({
         where: { invoice_id: invoice.invoice_id },
-        data: { status: newStatus }
+        data: { 
+          status: nodeStatus.status,
+          // Don't update expires_at here
+        }
       });
 
-      // Also update order status if paid
-      if (newStatus === 'paid') {
-        console.log('Updating order status to paid');
+      if (nodeStatus.status === 'paid') {
         await prisma.order.update({
-          where: { order_id: parseInt(orderId) },
-          data: { status: 'paid' }
+          where: { order_id: parseInt(req.params.orderId) },
+          data: { status: 'completed' }
         });
       }
+
+      return res.json({ invoice: serializeBigInt(updatedInvoice) });
     }
-
-    // Send back the current status and full invoice data
-    res.json({ 
-      status: newStatus,
-      invoice: {
-        ...invoice,
-        status: newStatus
-      }
-    });
-
+    
+    return res.json({ invoice: serializeBigInt(invoice) });
   } catch (error) {
-    console.error('Error checking full invoice:', error);
-    console.error('Error details:', error.response?.data);
-    res.status(500).json({ 
-      error: 'Failed to check invoice status',
-      details: error.message
-    });
+    console.error('Full invoice check error:', error);
+    res.status(500).json({ error: 'Failed to check invoice status' });
   }
 });
 
