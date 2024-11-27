@@ -676,7 +676,19 @@ async function generateInvoice(amount_msat: number, description: string, label: 
 
 async function fullInvoiceLookup(paymentHash: string) {
   try {
-    //console.log(`Performing full invoice lookup for payment_hash: ${paymentHash}`);
+    console.log(`[fullInvoiceLookup] Starting lookup for payment_hash: ${paymentHash}`);
+    
+    // First find the invoice in our database
+    const dbInvoice = await prisma.invoice.findFirst({
+      where: { payment_hash: paymentHash }
+    });
+
+    if (!dbInvoice) {
+      console.log(`[fullInvoiceLookup] No invoice found in database for payment_hash: ${paymentHash}`);
+      throw new Error('Invoice not found in database');
+    }
+
+    // Then check node status
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
       method: 'POST',
       headers: {
@@ -691,32 +703,28 @@ async function fullInvoiceLookup(paymentHash: string) {
     }
 
     const { invoices } = await response.json();
-    const invoice = invoices.find(inv => inv.payment_hash === paymentHash);
+    const nodeInvoice = invoices.find(inv => inv.payment_hash === paymentHash);
     
-    if (!invoice) {
-      throw new Error('Invoice not found');
+    if (!nodeInvoice) {
+      console.log(`[fullInvoiceLookup] No invoice found on node for payment_hash: ${paymentHash}`);
+      throw new Error('Invoice not found on node');
     }
 
-    // First find the invoice in our database
-    const dbInvoice = await prisma.invoice.findFirst({
-      where: { payment_hash: paymentHash }
-    });
-
-    if (!dbInvoice) {
-      throw new Error('Invoice not found in database');
-    }
+    console.log(`[fullInvoiceLookup] Node status: ${nodeInvoice.status}, DB status: ${dbInvoice.status}`);
     
     // Update using invoice_id if status has changed
-    if (invoice.status === 'paid' && dbInvoice.status !== 'paid') {
+    if (nodeInvoice.status === 'paid' && dbInvoice.status !== 'paid') {
+      console.log(`[fullInvoiceLookup] Updating invoice ${paymentHash} to paid status`);
       await prisma.invoice.update({
-        where: { invoice_id: dbInvoice.invoice_id },  // Use invoice_id instead of payment_hash
+        where: { invoice_id: dbInvoice.invoice_id },
         data: { status: 'paid' }
       });
+      nodeInvoice.status = 'paid';
     }
     
-    return invoice;
+    return nodeInvoice;
   } catch (error) {
-    console.error('Error looking up and updating full invoice:', error);
+    console.error('[fullInvoiceLookup] Error:', error);
     throw error;
   }
 }
