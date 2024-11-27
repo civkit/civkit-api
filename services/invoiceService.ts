@@ -138,62 +138,65 @@ async function syncInvoicesWithNode() {
       throw new Error(`HTTP Error: ${response.status}`);
     }
     const { invoices } = await response.json();
-    console.log('Fetched invoices from node:', invoices);
-
     const orderUpdates: { [key: string]: string[] } = {};
 
     for (const invoice of invoices) {
       console.log(`Processing invoice with payment_hash: ${invoice.payment_hash}`);
-      const dbInvoice = await prisma.invoice.findFirst({
-        where: { payment_hash: invoice.payment_hash },
-        select: { status: true, order_id: true, invoice_type: true, user_type: true }
-      });
+      
+      try {
+        const dbInvoice = await prisma.invoice.findFirst({
+          where: { payment_hash: invoice.payment_hash },
+          select: { 
+            invoice_id: true, 
+            status: true, 
+            order_id: true, 
+            invoice_type: true, 
+            user_type: true 
+          }
+        });
 
-      if (dbInvoice) {
+        if (!dbInvoice) {
+          console.log(`No matching record found for payment_hash ${invoice.payment_hash}`);
+          continue;
+        }
+
         const { status, order_id, invoice_type, user_type } = dbInvoice;
         let newStatus = invoice.status;
 
-        console.log(`Invoice details: type=${invoice_type}, user_type=${user_type}, current status=${status}`);
-
+        // Process hold invoices
         if (invoice_type === 'hold') {
-          console.log(`Checking hold invoice with payment_hash: ${invoice.payment_hash}`);
           const holdState = await holdInvoiceLookup(invoice.payment_hash);
-          console.log(`Hold state for invoice with payment_hash ${invoice.payment_hash}:`, holdState);
-
-          if (holdState.state === 'ACCEPTED' || holdState.state === 'settled') {
-            newStatus = 'ACCEPTED';
-          } else if (holdState.state === 'canceled') {
-            newStatus = 'canceled';
-          } else {
-            newStatus = holdState.state;
-          }
-
-          console.log(`New status for ${user_type} hold invoice: ${newStatus}`);
+          newStatus = holdState.state === 'ACCEPTED' || holdState.state === 'settled' 
+            ? 'ACCEPTED' 
+            : holdState.state === 'canceled' 
+              ? 'canceled' 
+              : holdState.state;
         }
 
+        // Update status if changed
         if (status !== newStatus) {
-          console.log(`Updating invoice status for payment_hash ${invoice.payment_hash} from ${status} to ${newStatus}`);
           await prisma.invoice.update({
-            where: { payment_hash: invoice.payment_hash },
+            where: { invoice_id: dbInvoice.invoice_id },
             data: { status: newStatus }
           });
-          console.log(`Invoice with payment_hash ${invoice.payment_hash} updated to status: ${newStatus}`);
-        } else {
-          console.log(`Invoice with payment_hash ${invoice.payment_hash} already has status: ${newStatus}`);
         }
 
+        // Track order updates
         if (!orderUpdates[order_id]) {
           orderUpdates[order_id] = [];
         }
         orderUpdates[order_id].push(newStatus);
-      } else {
-        console.log(`No matching record found in the database for invoice with payment_hash ${invoice.payment_hash}`);
+      } catch (error) {
+        console.error(`Error processing invoice ${invoice.payment_hash}:`, error);
+        // Continue with next invoice
+        continue;
       }
     }
 
+    // Process order updates
     for (const order_id in orderUpdates) {
       const statuses = orderUpdates[order_id];
-      const allHoldInvoices = statuses.filter((status) => status === 'ACCEPTED').length === 2;
+      const allHoldInvoices = statuses.filter(status => status === 'ACCEPTED').length === 2;
       const fullInvoicePaid = statuses.includes('ACCEPTED');
 
       if (allHoldInvoices && fullInvoicePaid) {
@@ -201,14 +204,11 @@ async function syncInvoicesWithNode() {
           where: { order_id: parseInt(order_id) },
           data: { status: 'chat_open' }
         });
-        console.log(`Order ${order_id} updated to chat_open`);
-      } else {
-        console.log(`Order ${order_id} does not meet the criteria for chat_open`);
       }
     }
 
   } catch (error) {
-    console.error('Error fetching invoices from node:', error);
+    console.error('Error in syncInvoicesWithNode:', error);
     throw error;
   }
 }
