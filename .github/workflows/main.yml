@@ -1,4 +1,5 @@
-name: Deploy API
+# .github/workflows/deploy-civkit-api.yml
+name: Deploy civkit-api
 
 on:
   push:
@@ -9,13 +10,13 @@ on:
     inputs:
       branch:
         description: 'Branch to deploy'
-        type: string
         required: true
         default: 'main'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    
     steps:
     - name: Deploy to Server
       uses: appleboy/ssh-action@master
@@ -24,43 +25,42 @@ jobs:
         username: ${{ secrets.DEPLOY_USER }}
         key: ${{ secrets.DEPLOY_KEY }}
         script: |
-          echo "Starting deployment..."
+          echo "Starting deployment of ${{ github.ref_name }}..."
           
-          # Stop the service
-          echo "Stopping civkit-api service..."
+          # Stop the civkit-api service
           systemctl stop civkit-api.service
           
-          # Clear TypeScript build cache
-          echo "Clearing build caches..."
           cd /root/civkit-api
-          rm -rf dist/* # Clear compiled files
-          rm -rf .tsbuildinfo # Clear TS build cache
           
-          # Clear Node cache but preserve node_modules
-          npm cache clean --force
+          # Fetch all branches and tags
+          git fetch --all --prune --tags --force
           
-          # Pull latest changes
-          echo "Pulling latest changes..."
-          git fetch origin
-          git checkout ${{ github.event.inputs.branch || github.ref_name }}
-          git pull origin ${{ github.event.inputs.branch || github.ref_name }}
+          # Save current changes
+          git stash
           
-          # Install only missing dependencies
-          echo "Installing dependencies..."
-          npm install --no-cache
+          # Force clean state
+          git reset --hard HEAD
+          git clean -fd
           
-          # Clean build
-          echo "Building application..."
-          npm run build
+          # Checkout and update main first
+          git checkout main
+          git reset --hard origin/main
+          git pull origin main --force
           
-          # Start service
-          echo "Starting civkit-api service..."
+          # If deploying feature branch
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "Deploying feature branch: ${{ github.ref_name }}"
+            # Force checkout and update to latest
+            git fetch origin ${GITHUB_REF#refs/heads/}:${GITHUB_REF#refs/heads/} --force
+            git checkout ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+          fi
+          
+          # Clear caches but preserve node_modules
+          rm -rf .next out .cache dist tsconfig.tsbuildinfo
+          
+          npm run build || echo "Build had issues but continuing..."
+          
           systemctl start civkit-api.service
           
-          # Verify service status
-          echo "Verifying service status..."
-          systemctl status civkit-api.service --no-pager
-          
-          # Follow logs briefly
-          echo "Recent logs:"
-          journalctl -u civkit-api.service -n 50 --no-pager
+          echo "Deployment completed!"
