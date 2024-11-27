@@ -655,9 +655,9 @@ function serializeBigInt(data: any): any {
 
 app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) => {
   try {
-    console.log(`Checking full invoice for order: ${req.params.orderId}`);
+    console.log(`[check-full-invoice] Checking invoice for order: ${req.params.orderId}`);
     
-    // First find the invoice to get its ID
+    // First find the invoice in our database
     const dbInvoice = await prisma.invoice.findFirst({
       where: { 
         order_id: parseInt(req.params.orderId),
@@ -666,47 +666,63 @@ app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) =
     });
 
     if (!dbInvoice) {
-      console.log(`No invoice found for order: ${req.params.orderId}`);
-      return res.status(404).json({ error: 'Invoice not found' });
+      console.log(`[check-full-invoice] No invoice found for order: ${req.params.orderId}`);
+      return res.status(404).json({ 
+        error: 'Invoice not found',
+        orderId: req.params.orderId 
+      });
     }
 
-    console.log(`Found invoice with payment_hash: ${dbInvoice.payment_hash}`);
-    
-    try {
-      const nodeStatus = await fullInvoiceLookup(dbInvoice.payment_hash);
-      console.log(`Node status for invoice: ${JSON.stringify(nodeStatus)}`);
-      
-      if (nodeStatus.status !== dbInvoice.status) {
-        console.log(`Updating invoice status from ${dbInvoice.status} to ${nodeStatus.status}`);
-        
-        const updatedInvoice = await prisma.invoice.update({
-          where: { invoice_id: dbInvoice.invoice_id },
-          data: { 
-            status: nodeStatus.status,
-          }
-        });
-
-        if (nodeStatus.status === 'paid') {
-          console.log(`Updating order ${req.params.orderId} to completed`);
-          await prisma.order.update({
-            where: { order_id: parseInt(req.params.orderId) },
-            data: { status: 'completed' }
-          });
-        }
-
-        return res.json({ invoice: serializeBigInt(updatedInvoice) });
+    // Then check node status
+    const response = await axios.post(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, 
+      { payment_hash: dbInvoice.payment_hash },
+      {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Rune': RUNE
+        },
+        httpsAgent: agent
       }
-      
-      return res.json({ invoice: serializeBigInt(dbInvoice) });
-    } catch (lookupError) {
-      console.error('Error during invoice lookup:', lookupError);
-      throw lookupError;
+    );
+
+    if (!response.data || !response.data.invoices) {
+      throw new Error('Invalid response from Lightning Node');
     }
+
+    const nodeInvoice = response.data.invoices.find(inv => inv.payment_hash === dbInvoice.payment_hash);
+    
+    if (!nodeInvoice) {
+      console.log(`[check-full-invoice] No invoice found on node for hash: ${dbInvoice.payment_hash}`);
+      return res.json({ invoice: serializeBigInt(dbInvoice) });
+    }
+
+    // Update if status has changed
+    if (nodeInvoice.status !== dbInvoice.status) {
+      console.log(`[check-full-invoice] Updating status from ${dbInvoice.status} to ${nodeInvoice.status}`);
+      
+      const updatedInvoice = await prisma.invoice.update({
+        where: { invoice_id: dbInvoice.invoice_id },
+        data: { status: nodeInvoice.status }
+      });
+
+      if (nodeInvoice.status === 'paid') {
+        console.log(`[check-full-invoice] Marking order ${req.params.orderId} as completed`);
+        await prisma.order.update({
+          where: { order_id: parseInt(req.params.orderId) },
+          data: { status: 'completed' }
+        });
+      }
+
+      return res.json({ invoice: serializeBigInt(updatedInvoice) });
+    }
+    
+    return res.json({ invoice: serializeBigInt(dbInvoice) });
   } catch (error) {
-    console.error('Full invoice check error:', error);
+    console.error('[check-full-invoice] Error:', error);
     res.status(500).json({ 
       error: 'Failed to check invoice status',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
+      orderId: req.params.orderId
     });
   }
 });
