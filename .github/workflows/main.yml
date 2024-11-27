@@ -5,7 +5,7 @@ on:
     branches: 
       - main
       - 'feature/**'
-  workflow_dispatch:  # This enables manual runs
+  workflow_dispatch:
     inputs:
       branch:
         description: 'Branch to deploy'
@@ -25,11 +25,42 @@ jobs:
         key: ${{ secrets.DEPLOY_KEY }}
         script: |
           echo "Starting deployment..."
+          
+          # Stop the service
+          echo "Stopping civkit-api service..."
           systemctl stop civkit-api.service
+          
+          # Clear TypeScript build cache
+          echo "Clearing build caches..."
           cd /root/civkit-api
+          rm -rf dist/* # Clear compiled files
+          rm -rf .tsbuildinfo # Clear TS build cache
+          
+          # Clear Node cache but preserve node_modules
+          npm cache clean --force
+          
+          # Pull latest changes
+          echo "Pulling latest changes..."
           git fetch origin
           git checkout ${{ github.event.inputs.branch || github.ref_name }}
           git pull origin ${{ github.event.inputs.branch || github.ref_name }}
-          npm install
+          
+          # Install only missing dependencies
+          echo "Installing dependencies..."
+          npm install --no-cache
+          
+          # Clean build
+          echo "Building application..."
           npm run build
+          
+          # Start service
+          echo "Starting civkit-api service..."
           systemctl start civkit-api.service
+          
+          # Verify service status
+          echo "Verifying service status..."
+          systemctl status civkit-api.service --no-pager
+          
+          # Follow logs briefly
+          echo "Recent logs:"
+          journalctl -u civkit-api.service -n 50 --no-pager
