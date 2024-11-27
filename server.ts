@@ -655,44 +655,59 @@ function serializeBigInt(data: any): any {
 
 app.post('/api/check-full-invoice/:orderId', authenticateJWT, async (req, res) => {
   try {
+    console.log(`Checking full invoice for order: ${req.params.orderId}`);
+    
     // First find the invoice to get its ID
-    const invoice = await prisma.invoice.findFirst({
+    const dbInvoice = await prisma.invoice.findFirst({
       where: { 
         order_id: parseInt(req.params.orderId),
         invoice_type: 'full'
       }
     });
 
-    if (!invoice) {
+    if (!dbInvoice) {
+      console.log(`No invoice found for order: ${req.params.orderId}`);
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
-    const nodeStatus = await fullInvoiceLookup(invoice.payment_hash);
+    console.log(`Found invoice with payment_hash: ${dbInvoice.payment_hash}`);
     
-    if (nodeStatus.status !== invoice.status) {
-      // Use invoice_id instead of payment_hash for the update
-      const updatedInvoice = await prisma.invoice.update({
-        where: { invoice_id: invoice.invoice_id },
-        data: { 
-          status: nodeStatus.status,
-          // Don't update expires_at here
-        }
-      });
-
-      if (nodeStatus.status === 'paid') {
-        await prisma.order.update({
-          where: { order_id: parseInt(req.params.orderId) },
-          data: { status: 'completed' }
+    try {
+      const nodeStatus = await fullInvoiceLookup(dbInvoice.payment_hash);
+      console.log(`Node status for invoice: ${JSON.stringify(nodeStatus)}`);
+      
+      if (nodeStatus.status !== dbInvoice.status) {
+        console.log(`Updating invoice status from ${dbInvoice.status} to ${nodeStatus.status}`);
+        
+        const updatedInvoice = await prisma.invoice.update({
+          where: { invoice_id: dbInvoice.invoice_id },
+          data: { 
+            status: nodeStatus.status,
+          }
         });
-      }
 
-      return res.json({ invoice: serializeBigInt(updatedInvoice) });
+        if (nodeStatus.status === 'paid') {
+          console.log(`Updating order ${req.params.orderId} to completed`);
+          await prisma.order.update({
+            where: { order_id: parseInt(req.params.orderId) },
+            data: { status: 'completed' }
+          });
+        }
+
+        return res.json({ invoice: serializeBigInt(updatedInvoice) });
+      }
+      
+      return res.json({ invoice: serializeBigInt(dbInvoice) });
+    } catch (lookupError) {
+      console.error('Error during invoice lookup:', lookupError);
+      throw lookupError;
     }
-    
-    return res.json({ invoice: serializeBigInt(invoice) });
   } catch (error) {
     console.error('Full invoice check error:', error);
-    res.status(500).json({ error: 'Failed to check invoice status' });
+    res.status(500).json({ 
+      error: 'Failed to check invoice status',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
