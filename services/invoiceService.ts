@@ -124,6 +124,8 @@ async function updateInvoiceStatus(payment_hash: string, status: string) {
 }
 
 async function syncInvoicesWithNode() {
+  const orderUpdates: { [key: string]: string[] } = {};
+
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
       method: 'POST',
@@ -138,16 +140,13 @@ async function syncInvoicesWithNode() {
       throw new Error(`HTTP Error: ${response.status}`);
     }
     const { invoices } = await response.json();
-    const orderUpdates: { [key: string]: string[] } = {};
-
+    
     for (const invoice of invoices) {
-      console.log(`Processing invoice with payment_hash: ${invoice.payment_hash}`);
-      
       try {
         const dbInvoice = await prisma.invoice.findFirst({
           where: { payment_hash: invoice.payment_hash },
           select: { 
-            invoice_id: true, 
+            invoice_id: true,
             status: true, 
             order_id: true, 
             invoice_type: true, 
@@ -163,17 +162,7 @@ async function syncInvoicesWithNode() {
         const { status, order_id, invoice_type, user_type } = dbInvoice;
         let newStatus = invoice.status;
 
-        // Process hold invoices
-        if (invoice_type === 'hold') {
-          const holdState = await holdInvoiceLookup(invoice.payment_hash);
-          newStatus = holdState.state === 'ACCEPTED' || holdState.state === 'settled' 
-            ? 'ACCEPTED' 
-            : holdState.state === 'canceled' 
-              ? 'canceled' 
-              : holdState.state;
-        }
-
-        // Update status if changed
+        // Process status updates
         if (status !== newStatus) {
           await prisma.invoice.update({
             where: { invoice_id: dbInvoice.invoice_id },
@@ -181,19 +170,19 @@ async function syncInvoicesWithNode() {
           });
         }
 
-        // Track order updates
+        // Track order updates within proper scope
         if (!orderUpdates[order_id]) {
           orderUpdates[order_id] = [];
         }
         orderUpdates[order_id].push(newStatus);
-      } catch (error) {
-        console.error(`Error processing invoice ${invoice.payment_hash}:`, error);
-        // Continue with next invoice
+
+      } catch (innerError) {
+        console.error(`Error processing invoice ${invoice.payment_hash}:`, innerError);
         continue;
       }
     }
 
-    // Process order updates
+    // Process order updates outside invoice loop but using only orderUpdates
     for (const order_id in orderUpdates) {
       const statuses = orderUpdates[order_id];
       const allHoldInvoices = statuses.filter(status => status === 'ACCEPTED').length === 2;
