@@ -73,7 +73,7 @@ async function postHoldinvoice(amount_msat: number, description: string, orderId
 
 async function holdInvoiceLookup(payment_hash: string) {
   try {
-    console.log(`[holdInvoiceLookup] Starting lookup for payment_hash: ${payment_hash}`);
+    //console.log(`[holdInvoiceLookup] Starting lookup for payment_hash: ${payment_hash}`);
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/holdinvoicelookup`, {
       method: 'POST',
       headers: {
@@ -85,25 +85,25 @@ async function holdInvoiceLookup(payment_hash: string) {
       agent: new https.Agent({ rejectUnauthorized: false })
     });
 
-    console.log(`[holdInvoiceLookup] Response status: ${response.status}`);
+    //console.log(`[holdInvoiceLookup] Response status: ${response.status}`);
 
     if (!response.ok) {
       throw new Error(`HTTP Error: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('[holdInvoiceLookup] Response data:', data);
+    //console.log('[holdInvoiceLookup] Response data:', data);
 
     if (data.state === 'ACCEPTED') {
-      console.log(`[holdInvoiceLookup] Invoice ${payment_hash} is ACCEPTED. Updating status.`);
+      //console.log(`[holdInvoiceLookup] Invoice ${payment_hash} is ACCEPTED. Updating status.`);
       await updateInvoiceStatus(payment_hash, 'paid');
     } else {
-      console.log(`[holdInvoiceLookup] Invoice ${payment_hash} state: ${data.state}`);
+     //console.log(`[holdInvoiceLookup] Invoice ${payment_hash} state: ${data.state}`);
     }
 
     return data;
   } catch (error) {
-    console.error('[holdInvoiceLookup] Error:', error);
+    //console.error('[holdInvoiceLookup] Error:', error);
     throw error;
   }
 }
@@ -124,6 +124,8 @@ async function updateInvoiceStatus(payment_hash: string, status: string) {
 }
 
 async function syncInvoicesWithNode() {
+  const orderUpdates: { [key: string]: string[] } = {};
+
   try {
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
       method: 'POST',
@@ -138,62 +140,52 @@ async function syncInvoicesWithNode() {
       throw new Error(`HTTP Error: ${response.status}`);
     }
     const { invoices } = await response.json();
-    console.log('Fetched invoices from node:', invoices);
-
-    const orderUpdates: { [key: string]: string[] } = {};
-
+    
     for (const invoice of invoices) {
-      console.log(`Processing invoice with payment_hash: ${invoice.payment_hash}`);
-      const dbInvoice = await prisma.invoice.findFirst({
-        where: { payment_hash: invoice.payment_hash },
-        select: { status: true, order_id: true, invoice_type: true, user_type: true }
-      });
+      try {
+        const dbInvoice = await prisma.invoice.findFirst({
+          where: { payment_hash: invoice.payment_hash },
+          select: { 
+            invoice_id: true,
+            status: true, 
+            order_id: true, 
+            invoice_type: true, 
+            user_type: true 
+          }
+        });
 
-      if (dbInvoice) {
+        if (!dbInvoice) {
+          console.log(`No matching record found for payment_hash ${invoice.payment_hash}`);
+          continue;
+        }
+
         const { status, order_id, invoice_type, user_type } = dbInvoice;
         let newStatus = invoice.status;
 
-        console.log(`Invoice details: type=${invoice_type}, user_type=${user_type}, current status=${status}`);
-
-        if (invoice_type === 'hold') {
-          console.log(`Checking hold invoice with payment_hash: ${invoice.payment_hash}`);
-          const holdState = await holdInvoiceLookup(invoice.payment_hash);
-          console.log(`Hold state for invoice with payment_hash ${invoice.payment_hash}:`, holdState);
-
-          if (holdState.state === 'ACCEPTED' || holdState.state === 'settled') {
-            newStatus = 'ACCEPTED';
-          } else if (holdState.state === 'canceled') {
-            newStatus = 'canceled';
-          } else {
-            newStatus = holdState.state;
-          }
-
-          console.log(`New status for ${user_type} hold invoice: ${newStatus}`);
-        }
-
+        // Process status updates
         if (status !== newStatus) {
-          console.log(`Updating invoice status for payment_hash ${invoice.payment_hash} from ${status} to ${newStatus}`);
           await prisma.invoice.update({
-            where: { payment_hash: invoice.payment_hash },
+            where: { invoice_id: dbInvoice.invoice_id },
             data: { status: newStatus }
           });
-          console.log(`Invoice with payment_hash ${invoice.payment_hash} updated to status: ${newStatus}`);
-        } else {
-          console.log(`Invoice with payment_hash ${invoice.payment_hash} already has status: ${newStatus}`);
         }
 
+        // Track order updates within proper scope
         if (!orderUpdates[order_id]) {
           orderUpdates[order_id] = [];
         }
         orderUpdates[order_id].push(newStatus);
-      } else {
-        console.log(`No matching record found in the database for invoice with payment_hash ${invoice.payment_hash}`);
+
+      } catch (innerError) {
+        console.error(`Error processing invoice ${invoice.payment_hash}:`, innerError);
+        continue;
       }
     }
 
+    // Process order updates outside invoice loop but using only orderUpdates
     for (const order_id in orderUpdates) {
       const statuses = orderUpdates[order_id];
-      const allHoldInvoices = statuses.filter((status) => status === 'ACCEPTED').length === 2;
+      const allHoldInvoices = statuses.filter(status => status === 'ACCEPTED').length === 2;
       const fullInvoicePaid = statuses.includes('ACCEPTED');
 
       if (allHoldInvoices && fullInvoicePaid) {
@@ -201,14 +193,11 @@ async function syncInvoicesWithNode() {
           where: { order_id: parseInt(order_id) },
           data: { status: 'chat_open' }
         });
-        console.log(`Order ${order_id} updated to chat_open`);
-      } else {
-        console.log(`Order ${order_id} does not meet the criteria for chat_open`);
       }
     }
 
   } catch (error) {
-    console.error('Error fetching invoices from node:', error);
+    console.error('Error in syncInvoicesWithNode:', error);
     throw error;
   }
 }
@@ -687,7 +676,19 @@ async function generateInvoice(amount_msat: number, description: string, label: 
 
 async function fullInvoiceLookup(paymentHash: string) {
   try {
-    console.log(`Performing full invoice lookup for payment_hash: ${paymentHash}`);
+    console.log(`[fullInvoiceLookup] Starting lookup for payment_hash: ${paymentHash}`);
+    
+    // First find the invoice in our database
+    const dbInvoice = await prisma.invoice.findFirst({
+      where: { payment_hash: paymentHash }
+    });
+
+    if (!dbInvoice) {
+      console.log(`[fullInvoiceLookup] No invoice found in database for payment_hash: ${paymentHash}`);
+      throw new Error('Invoice not found in database');
+    }
+
+    // Then check node status
     const response = await fetch(`${LIGHTNING_NODE_API_URL}/v1/listinvoices`, {
       method: 'POST',
       headers: {
@@ -702,26 +703,28 @@ async function fullInvoiceLookup(paymentHash: string) {
     }
 
     const { invoices } = await response.json();
-    console.log('Lightning node response:', invoices);
+    const nodeInvoice = invoices.find(inv => inv.payment_hash === paymentHash);
     
-    const invoice = invoices.find(inv => inv.payment_hash === paymentHash);
-    
-    if (!invoice) {
-      throw new Error('Invoice not found');
+    if (!nodeInvoice) {
+      console.log(`[fullInvoiceLookup] No invoice found on node for payment_hash: ${paymentHash}`);
+      throw new Error('Invoice not found on node');
     }
+
+    console.log(`[fullInvoiceLookup] Node status: ${nodeInvoice.status}, DB status: ${dbInvoice.status}`);
     
-    // Update the database if the invoice is paid
-    if (invoice.status === 'paid') {
+    // Update using invoice_id if status has changed
+    if (nodeInvoice.status === 'paid' && dbInvoice.status !== 'paid') {
+      console.log(`[fullInvoiceLookup] Updating invoice ${paymentHash} to paid status`);
       await prisma.invoice.update({
-        where: { payment_hash: paymentHash },
-        data: { status: 'paid', paid_at: new Date() },
+        where: { invoice_id: dbInvoice.invoice_id },
+        data: { status: 'paid' }
       });
-      console.log(`Updated invoice ${paymentHash} to paid status in database`);
+      nodeInvoice.status = 'paid';
     }
     
-    return invoice;
+    return nodeInvoice;
   } catch (error) {
-    console.error('Error looking up and updating full invoice:', error);
+    console.error('[fullInvoiceLookup] Error:', error);
     throw error;
   }
 }

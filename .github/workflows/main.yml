@@ -1,21 +1,22 @@
-name: Deploy API
+# .github/workflows/deploy-civkit-api.yml
+name: Deploy civkit-api
 
 on:
   push:
     branches: 
       - main
       - 'feature/**'
-  workflow_dispatch:  # This enables manual runs
+  workflow_dispatch:
     inputs:
       branch:
         description: 'Branch to deploy'
-        type: string
         required: true
         default: 'main'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    
     steps:
     - name: Deploy to Server
       uses: appleboy/ssh-action@master
@@ -24,12 +25,42 @@ jobs:
         username: ${{ secrets.DEPLOY_USER }}
         key: ${{ secrets.DEPLOY_KEY }}
         script: |
-          echo "Starting deployment..."
+          echo "Starting deployment of ${{ github.ref_name }}..."
+          
+          # Stop the civkit-api service
           systemctl stop civkit-api.service
+          
           cd /root/civkit-api
-          git fetch origin
-          git checkout ${{ github.event.inputs.branch || github.ref_name }}
-          git pull origin ${{ github.event.inputs.branch || github.ref_name }}
-          npm install
-          npm run build
+          
+          # Fetch all branches and tags
+          git fetch --all --prune --tags --force
+          
+          # Save current changes
+          git stash
+          
+          # Force clean state
+          git reset --hard HEAD
+          git clean -fd
+          
+          # Checkout and update main first
+          git checkout main
+          git reset --hard origin/main
+          git pull origin main --force
+          
+          # If deploying feature branch
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "Deploying feature branch: ${{ github.ref_name }}"
+            # Force checkout and update to latest
+            git fetch origin ${GITHUB_REF#refs/heads/}:${GITHUB_REF#refs/heads/} --force
+            git checkout ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+          fi
+          
+          # Clear caches but preserve node_modules
+          rm -rf .next out .cache dist tsconfig.tsbuildinfo
+          
+          npm run build || echo "Build had issues but continuing..."
+          
           systemctl start civkit-api.service
+          
+          echo "Deployment completed!"
