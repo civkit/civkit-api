@@ -1,6 +1,6 @@
 # Civkit Application Setup
 
-This README provides instructions for setting up the Civkit Africa application, including the database, API and NGINX. Please consult and setup these 2 repos to get the full civkit marketplace experience. 
+This README provides instructions for setting up the Civkit Africa application, including the database, API and NGINX. Please consult and setup these 2 repos to get the full civkit marketplace experience. I suggest starting with frontend code, then chat and ending here. API requires frontend/chat work and you have the variables for the .env file.
 
 - Frontend: https://github.com/civkit/civkit-frontend
 - Chat: https://github.com/civkit/civkit-chat
@@ -74,7 +74,11 @@ Our code using a postgres database which we are managing with Prisma. You can ea
    npm run start
    ```
 
-At this stage, your node will announce itself to the nostr relay you specified. This lets the world know your node is live in Nostr verse. An event kind 1505 is created by the API and sent to the relay specified in .env. You will also see a private key generate which is your node runner private key. Below is a successful bootup. 
+At this stage, your node will announce itself to the nostr relay you specified. This lets the world know your node is live in Nostr verse. An event kind 1505 is created by the API and sent to the relay specified in .env. You will also see a private key generate which is your node runner private key. Below is a successful bootup. If you made it this far, congratulations. You are 1 step closer to running a sovereign marketplace that uses nostr, lightning and pgp to create unstoppable trade. You will see these events appearing on your relay if your filter for this event type. This is a critical part of censorship resistance as nodes can go offline but re-announce themselves at a later date using nostr rather then centralized censorable methods.
+
+You can test CURL commands at this stage such as registering a user on the backend. You can only create users with NPUBS so if you generate a new key, you can run the register command and pay the invoice. This will give you a password which will be shown in the logs. You can then login with CURL as well. We need more documentation on running backend curl's but for now I wanted to give you a guideline at least to start. I hope we can add that to documentation to make backend setup easier. 
+
+For now, if you see this, it means you've made it. 
 
 ```
  npm run start
