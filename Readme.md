@@ -164,6 +164,16 @@ This setup assumes you have setup chat and frontend, so if you have not done thi
 
 Remember to replace placeholder values (like port numbers and domain names) with your actual values. 
 
+## How to Contribute
+
+We are 100% OPEN SOURCE now and forever. We rely on the contributions of the public to move the mission of permissionless f*ck you money around the world. Our code is only good when its reviewed and improved. I have created a list of good first issues for users to look at to get started in contributing to the codebase.
+
+
+Feel Free to Reach out to me here for questions and open issues. I will do my best to assist you.
+
+We also have a telegram chat here: https://t.me/civkittv
+
+## Other Notes
 Our API code does have some technical debt in the sense of unused endpoints. If someone would like to review this and remove unused endpoints that are not consumed by frontend. Please open an issue if you find unused endpoints. It would help us tremendously and provide a tangible easy goal. 
 
 Below is a non comprehensive list of endpoints. Please update or change this if you find new or unused endpoints.
@@ -199,4 +209,4 @@ Endpoints not consumed:
 | POST | /api/submitToMainstay | Submit data to Mainstay |
 
 
-Feel Free to Reach out to me here or 
+Feel Free to Reach out to me here for questions and open issues. I will do my best to assist you.
