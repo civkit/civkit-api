@@ -73,6 +73,45 @@ Our code using a postgres database which we are managing with Prisma. You can ea
    ```
    npm run start
    ```
+
+At this stage, your node will announce itself to the nostr relay you specified. This lets the world know your node is live in Nostr verse. An event kind 1505 is created by the API and sent to the relay specified in .env. You will also see a private key generate which is your node runner private key. Below is a successful bootup. 
+
+```
+ npm run start
+
+> new-lightning-api@1.0.0 start
+> node dist/server.js
+
+LIGHTNING_NODE_API_URL: https://localhost:3010
+Server running on port 3000
+Using pubkey: 3f516e4a7d67592df8ad164cad54cf35b4d5f85fe9102ec75ac0e9da0acaaa3c
+Created event: {
+  "kind": 1505,
+  "created_at": 1732769136,
+  "tags": [
+    [
+      "t",
+      "civkit"
+    ],
+    [
+      "t",
+      "orderbook"
+    ]
+  ],
+  "content": "{\"message\":\"I'm a CivKit node. Place your orders here.\",\"url\":\"https://frontend.civkit.africa\"}",
+  "pubkey": "3f516e4a7d67592df8ad164cad54cf35b4d5f85fe9102ec75ac0e9da0acaaa3c",
+  "id": "dc05b668f3af1b88b1b2c0918593d6eab2ebac9e698a93c12059688b8e727484",
+  "sig": "4e86688e5af682c118e63f1cfa7e85ae44a0ba99c929b7974a70eab93c641822755c29e937cf01e9bd92bed50ef41b9aaf669ce9dd46644f5f00cc8e8fd7c578"
+}
+
+Attempting to connect to wss://civkit.africa
+Connected to wss://civkit.africa
+Sending message to wss://civkit.africa: ["EVENT",{"kind":1505,"created_at":1732769136,"tags":[["t","civkit"],["t","orderbook"]],"content":"{\"message\":\"I'm a CivKit node. Place your orders here.\",\"url\":\"https://frontend.civkit.africa\"}","pubkey":"3f516e4a7d67592df8ad164cad54cf35b4d5f85fe9102ec75ac0e9da0acaaa3c","id":"dc05b668f3af1b88b1b2c0918593d6eab2ebac9e698a93c12059688b8e727484","sig":"4e86688e5af682c118e63f1cfa7e85ae44a0ba99c929b7974a70eab93c641822755c29e937cf01e9bd92bed50ef41b9aaf669ce9dd46644f5f00cc8e8fd7c578"}]
+Received message from wss://civkit.africa: ["OK","dc05b668f3af1b88b1b2c0918593d6eab2ebac9e698a93c12059688b8e727484",true,""]
+Event published successfully to wss://civkit.africa
+Successfully published to wss://civkit.africa
+CivKit node announced successfully
+```
    
 ## Nginx Setup
 
