@@ -1,6 +1,6 @@
 # Civkit Application Setup
 
-This README provides instructions for setting up the Civkit Africa application, including the database, frontend, API, chat application, and Nginx configuration.
+This README provides instructions for setting up the Civkit API needed to run a full censorship resistant marketplace.
 
 ## Prerequisites
 - c-lightning
