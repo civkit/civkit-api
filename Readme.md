@@ -3,7 +3,7 @@
 This README provides instructions for setting up the Civkit Africa application, including the database, API and NGINX. Please consult and setup these 2 repos to get the full civkit marketplace experience. 
 
 - Frontend: https://github.com/civkit/civkit-frontend
-- Chat:
+- Chat: https://github.com/civkit/civkit-chat
 
 ## Prerequisites
 
