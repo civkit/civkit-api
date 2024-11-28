@@ -17,7 +17,7 @@ For now, you will need these to get the civkit api and frontend working as a mar
 - a domain name
 - a server to deploy on
 
-  You can run everything on signet, regtest and tesnet. It has been validated on all networks as functioning.
+You can run everything on signet, regtest and tesnet. It has been validated on all networks as functioning.
 
 ## Database Setup (Prisma)
 
