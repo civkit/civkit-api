@@ -1,15 +1,27 @@
 # Civkit Application Setup
 
-This README provides instructions for setting up the Civkit Africa application, including the database, frontend, API, chat application, and Nginx configuration.
+This README provides instructions for setting up the Civkit Africa application, including the database, API and NGINX. Please consult and setup these 2 repos to get the full civkit marketplace experience. 
+
+- Frontend: https://github.com/civkit/civkit-frontend
+- Chat:
 
 ## Prerequisites
-- c-lightning
-- daywalker hold invoice plugin
-- nostr relay. nostr-rs-relay preferred
-- a domain
+
+These are essential to the funtioning of the application. You will need to be able to manage a lightning node with routing for this project to work. We are using a plugin to manage hold invoices so versions of core lightning can impact the success of the installation. In order to get this setup done effectively, I suggest spending a bit of time on the prerequisites. The code is easier to run then the prerequisite setup. We are seeking contributors to improve this too so feel free to open a PR or issue to make this simpler. 
+
+For now, you will need these to get the civkit api and frontend working as a marketplace runner. 
+
+- c-lightning (v23.11.2) 
+- daywalker hold invoice plugin (here https://github.com/daywalker90/holdinvoice?tab=readme-ov-file#installation)
+- nostr relay. nostr-rs-relay preferred. (https://github.com/scsibug/nostr-rs-relay)
+- a domain name
 - a server to deploy on
 
+  You can run everything on signet, regtest and tesnet. It has been validated on all networks as functioning.
+
 ## Database Setup (Prisma)
+
+Our code using a postgres database which we are managing with Prisma. You can easily setup the database yourself using prisma commands. This will create the tables. You can reference the schema.prisma table to understand the structure.
 
 1. Install Prisma CLI:
    ```
@@ -25,37 +37,13 @@ This README provides instructions for setting up the Civkit Africa application, 
 
 4. Generate Prisma client:
    ```
-   prisma generate
+   npx prisma generate
    ```
 
 5. Apply migrations:
    ```
    prisma migrate dev
    ```
-
-## Frontend Setup
-
-1. Navigate to the frontend directory:
-   ```
-   cd path/to/frontend
-   ```
-
-2. Install dependencies:
-   ```
-   npm install
-   ```
-
-3. Build the application:
-   ```
-   npm run build
-   ```
-
-4. Start development server:
-   ```
-   npm run dev
-   ```
-
-5. Update the `.env` file with necessary variables (e.g., API URL).
 
 ## API Setup
 
@@ -69,41 +57,26 @@ This README provides instructions for setting up the Civkit Africa application, 
    npm install
    ```
 
-3. Build the application:
+3. Generate JWT token:
+   ```
+   openssl rand -base64 32
+   ```
+
+4. Update the `.env` file with the JWT token and other necessary variables.
+
+5. Build the application:
    ```
    npm run build
    ```
-
-4. Start development server:
+   
+6. Start development server:
    ```
-   npm run dev
+   npm run start
    ```
-
-5. Generate JWT token:
-   ```
-   node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
-   ```
-
-6. Update the `.env` file with the JWT token and other necessary variables.
-
-## Chat Application Setup
-
-1. Navigate to the chat application directory:
-   ```
-   cd path/to/chat
-   ```
-
-2. Run the build script:
-   ```
-   ./build.sh
-   ```
-
-3. Start the chat application:
-   ```
-   ./run.sh
-   ```
-
+   
 ## Nginx Setup
+
+This setup assumes you have setup chat and frontend, so if you have not done this, you can go ahead and do that first. The code can run for testing without nginx and self signed certs but its much easier to just get nginx working out the gate if you plan to use this for anything real. The setup is fairly straightforward but you will need to purchase a domain.
 
 1. Install Nginx:
    ```
@@ -121,7 +94,7 @@ This README provides instructions for setting up the Civkit Africa application, 
    ```nginx
    server {
        listen 80;
-       server_name frontend.civkit.africa;
+       server_name {{ frontend domain }};
 
        location / {
            proxy_pass http://127.0.0.1:3001;
@@ -135,7 +108,7 @@ This README provides instructions for setting up the Civkit Africa application, 
 
    server {
        listen 80;
-       server_name api.civkit.africa;
+       server_name {{api domain}};
 
        location / {
            proxy_pass http://127.0.0.1:3000;
@@ -149,7 +122,7 @@ This README provides instructions for setting up the Civkit Africa application, 
 
    server {
        listen 80;
-       server_name chat.civkit.africa;
+       server_name {{chat domain}};
 
        location / {
            proxy_pass http://127.0.0.1:3456;
@@ -189,8 +162,11 @@ This README provides instructions for setting up the Civkit Africa application, 
 
 9. Follow the prompts to complete SSL setup.
 
-Remember to replace placeholder values (like port numbers and domain names) with your actual values. This README provides a quick overview of the setup process for each component of the Civkit Africa application.
-These are the endpoints being consumed by FE:
+Remember to replace placeholder values (like port numbers and domain names) with your actual values. 
+
+Our API code does have some technical debt in the sense of unused endpoints. If someone would like to review this and remove unused endpoints that are not consumed by frontend. Please open an issue if you find unused endpoints. It would help us tremendously and provide a tangible easy goal. 
+
+Below is a non comprehensive list of endpoints. Please update or change this if you find new or unused endpoints.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -221,3 +197,6 @@ Endpoints not consumed:
 | POST | /api/settle/settle-hold-invoices | Settle hold invoices for an order |
 | POST | /api/orders/settle-holdinvoices-by-order | Settle hold invoices by order ID |
 | POST | /api/submitToMainstay | Submit data to Mainstay |
+
+
+Feel Free to Reach out to me here or 
